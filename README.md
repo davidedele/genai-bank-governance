@@ -75,28 +75,22 @@ pip install -r requirements-dev.txt
 pytest tests/
 ```
 
-`tests/test_mapper.py` and `tests/test_classifier.py` cover the deterministic logic (risk mapping, JSON extraction, validation) without calling any real provider; `tests/test_providers.py` covers provider selection and the retry-on-transient-failure wrapper. These run in CI on every push (`.github/workflows/tests.yml`), same as:
+`tests/test_mapper.py` and `tests/test_classifier.py` cover the deterministic logic (risk mapping, JSON extraction, validation) without calling any real provider; `tests/test_providers.py` covers provider selection and the retry-on-transient-failure wrapper; `tests/test_hook.py` covers the optional prompt-event hook described below. These run in CI on every push (`.github/workflows/tests.yml`), along with `python scripts/check_package.py`, which fails if the tracked tree contains an environment file, a raw log, a database, a patch or a bundle.
+
+## Optional prompt-event hook
+
+`claude-plugin/genai-usage-logger` is a small, opt-in Claude Code plugin. It no longer reads or classifies prompts. For each submitted prompt it records only a timestamp, the event type, a random event id and the prompt's character count, in a local SQLite file. It keeps no prompt text, no content hash, no session id, no transcript path and no working directory, and it makes no model call. A prompt event is not a complete business use case, and a count of events is not evidence that anything was reviewed.
+
+It does nothing unless you turn it on in the shell that starts the coding tool:
 
 ```bash
-python3 scripts/check_plugin_sync.py
+export GENAI_LOG_METADATA=1
+export GENAI_EVENT_DB="$HOME/.local/share/genai-governance/events.sqlite"
 ```
 
-which checks that `claude-plugin/genai-usage-logger/hooks/register.ts` (which duplicates `data/framework.py`'s dimensions and `classifier.py`'s banking_process wording by hand, since the plugin's sandboxed TypeScript environment can't import this project's Python) hasn't drifted out of sync with the Python side. It already did once during development. This script and its own CI workflow (`.github/workflows/check-plugin-sync.yml`) catch that before it happens again silently.
+The path must be absolute. At most 1,000 events are kept, and events older than seven days are removed on the next write.
 
-## Auto-logging a Claude Code session
-
-The Streamlit app's Auto-classify tab still needs someone to type a description. `genai-usage-logger` is a small Claude Code plugin (a "mod": a `hooks` module, not Python) that does what the thesis's "enterprise AI gateway" framing actually implies: it watches every prompt in a Claude Code session, logs it, and classifies it against the same five dimensions on its own timer, with nobody filling anything in.
-
-It works in two stages:
-
-1. On every prompt submitted in the session, it appends the raw text to `data/auto_log.jsonl` as `"pending"`, and lets the prompt through immediately, so it never adds latency to a turn.
-2. A background timer (every 20 seconds) scans that file for `"pending"` entries (and retries `"failed"` ones, up to 3 attempts each, in case the failure was transient), classifies each with one model call (the exact same prompt and validation rules as `classifier.py`, duplicated in the mod since its sandboxed environment can't import this project's Python), and writes the result back as `"classified"` or `"failed"`.
-
-Reads and writes to `data/auto_log.jsonl` are merged against whatever is on disk at write time, not just overwritten, so a prompt submitted while the background timer is mid-classification can't be silently lost to a race between the two. The file is also capped at roughly 2,000 resolved (classified/failed) entries, with the oldest dropped first, so a long-running session doesn't grow it without bound; entries still `"pending"` are never dropped. A description longer than 1,500 characters is truncated before it's sent to the model, and the entry is marked accordingly so the log stays honest about having classified a partial description.
-
-`auto_log.py` reads that same file from the Python side and `app.py`'s Register tab merges in every `"classified"` entry, tagged `source: claude-code-auto`, alongside manual and Auto-classify entries. A `🔄 Refresh` button in that tab re-reads the file on demand, since the mod writes to it independently of the Streamlit process.
-
-The mod's own files live outside this repository (Claude Code plugins are not part of a project's own source tree), under the plugin name `genai-usage-logger`. `data/auto_log.jsonl` is gitignored: it accumulates raw prompt text before classification, which can be exactly the kind of confidential or client information the thesis's framework is meant to flag, so it should never be committed.
+The earlier version of this plugin appended every raw prompt to `data/auto_log.jsonl` and classified it in the background. That created a second store of potentially confidential text and a second path to a model provider, so it has been removed. Updating this repository does not unload an already installed copy of the old plugin: disable it in your plugin manager before using the replacement. Existing `data/auto_log.jsonl` files are not imported or deleted, and the Register tab no longer reads them; review and remove them yourself if you no longer need them.
 
 ## Security notes
 
@@ -107,7 +101,7 @@ This is a local script, not a hosted web app, so most of a typical web security 
 - Free-text input is capped at 1,500 characters, both in the UI and server-side, to bound API cost per request.
 - Classifications are capped per session (30 by default) as a simple guard against runaway API spend if this is ever deployed somewhere other than your own machine.
 - Streamlit escapes rendered text by default; nothing in this app uses `unsafe_allow_html`, `eval`, `exec` or `pickle`.
-- `data/auto_log.jsonl`, written by the genai-usage-logger mod described above, holds raw prompt text before it's classified. It's gitignored and only ever read by `auto_log.py` on this machine; nothing sends it anywhere else.
+- The optional prompt-event hook stores no prompt content (see above), and it is off unless you opt in.
 
 If you ever do deploy this somewhere public (Streamlit Community Cloud, for instance), the one thing worth adding before you do is a real rate limit tied to IP or an auth layer, not just the per-session counter above, since a new session resets it.
 
@@ -121,10 +115,9 @@ providers.py           picks and calls the model provider (Anthropic, OpenAI, Gr
 eval/cases.py         16 hand-labeled synthetic use cases
 eval/run_eval.py      runs the classifier against eval/cases.py and reports accuracy
 app.py                 the Streamlit app
-auto_log.py            reads data/auto_log.jsonl (written by the genai-usage-logger Claude Code mod) into register-shaped entries
-data/auto_log.jsonl   gitignored; raw and classified prompts the mod has logged, if any
+claude-plugin/         optional metadata-only prompt-event hook
 tests/                 pytest suite for mapper.py, classifier.py and providers.py (no real API calls)
-scripts/check_plugin_sync.py   checks register.ts hasn't drifted from classifier.py / data/framework.py
+scripts/check_package.py       fails if runtime or private files are tracked, or attribution settings change
 ```
 
 ## A note on how this was built

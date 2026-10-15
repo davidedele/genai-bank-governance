@@ -1,3 +1,15 @@
 {
-  "modules": ["./register.ts"]
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/capture_event.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }

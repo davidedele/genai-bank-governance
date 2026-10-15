@@ -23,7 +23,6 @@ from data.framework import DIMENSIONS, FORMS_OF_USE, ILLUSTRATIVE_USE_CASES, RIS
 from mapper import flagged_risk_ids, recommended_action, risk_areas_by_id
 from classifier import classify_use_case, ClassificationError, MAX_DESCRIPTION_CHARS
 from providers import PROVIDERS, current_provider_id, current_model, ProviderError
-from auto_log import read_classified_entries
 
 MAX_CLASSIFICATIONS_PER_SESSION = 30
 
@@ -46,27 +45,6 @@ if "register" not in st.session_state:
         {**dict(uc), "source": "thesis example (Table 4)", "logged_at": "—"}
         for uc in ILLUSTRATIVE_USE_CASES
     ]
-    # Entries already classified by genai-usage-logger (the Claude Code mod
-    # that auto-logs every prompt in a session) before this app even started.
-    st.session_state.auto_log_seen_ids = set()
-
-
-def sync_auto_log():
-    """Pull in any newly classified entries from the shared auto-log file.
-
-    Called on every render, not just once, since the genai-usage-logger mod
-    writes to that file on its own timer, independent of this app. Dedup is
-    by the mod's own entry id, since Streamlit reruns this whole script on
-    every interaction and would otherwise re-append the same rows forever.
-    """
-    for entry in read_classified_entries():
-        if entry["id"] in st.session_state.auto_log_seen_ids:
-            continue
-        st.session_state.auto_log_seen_ids.add(entry["id"])
-        st.session_state.register.append({k: v for k, v in entry.items() if k != "id"})
-
-
-sync_auto_log()
 
 
 def render_risk_panel(use_case: dict):
@@ -217,20 +195,6 @@ with tab_register:
         "dimensions and the same risk-to-control table. The first six rows are "
         "the illustrative examples from the thesis itself (Table 4)."
     )
-
-    auto_col, refresh_col = st.columns([5, 1])
-    with auto_col:
-        st.caption(
-            "Rows marked **claude-code-auto** were logged by the genai-usage-logger "
-            "Claude Code plugin, which watches a session's prompts and classifies "
-            "them on its own timer, not by anyone typing into Auto-classify. It "
-            "writes to `data/auto_log.jsonl`; this tab re-reads that file on every "
-            "refresh, which is why a new auto-logged entry may need one click here "
-            "to appear."
-        )
-    with refresh_col:
-        if st.button("🔄 Refresh"):
-            st.rerun()
 
     # Re-run the mapper over every entry on each page load, rather than
     # storing the flagged risks and action at the time an entry was added.
