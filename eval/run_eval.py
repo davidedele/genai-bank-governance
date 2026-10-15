@@ -14,6 +14,10 @@ Writes a report to eval/results.md and prints a summary to the terminal.
 import sys
 from pathlib import Path
 
+# This script lives in eval/, but imports data/, mapper.py and classifier.py
+# from the project root, so the root needs to be on the import path. Running
+# it as `python eval/run_eval.py` from the project root, as the usage note
+# above says, is what makes this necessary.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from data.framework import DIMENSIONS
@@ -41,12 +45,21 @@ def main():
             failures += 1
             continue
 
+        # "Correct" here is an exact string match against the hand-labeled
+        # value for each dimension. There's no partial credit; a close but
+        # wrong value (e.g. "Enterprise tool" instead of "Internal
+        # application connected to bank systems") counts as a miss on that
+        # dimension, same as a value that's completely off.
         correct_fields = []
         for key in ["form"] + DIM_IDS:
             is_correct = pred.get(key) == gt.get(key)
             per_dim_correct[key] += int(is_correct)
             correct_fields.append(is_correct)
 
+        # This is the metric that actually matters more than per-dimension
+        # accuracy: even if the classifier gets a dimension slightly wrong,
+        # what matters for the register is whether it still lands on the
+        # same risk areas and the same recommended action as a human would.
         gt_risks = set(flagged_risk_ids(gt))
         pred_risks = set(flagged_risk_ids(pred))
         risks_match = gt_risks == pred_risks

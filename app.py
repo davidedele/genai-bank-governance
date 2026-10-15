@@ -33,6 +33,10 @@ def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+# st.session_state persists for one browser tab's session, not across restarts
+# or between different users, so the register and the classification count
+# below both reset whenever the app process restarts. That's fine for a demo;
+# a real deployment would need to persist the register somewhere durable.
 if "register" not in st.session_state:
     st.session_state.register = [
         {**dict(uc), "source": "thesis example (Table 4)", "logged_at": "—"}
@@ -41,9 +45,15 @@ if "register" not in st.session_state:
 
 
 def render_risk_panel(use_case: dict):
+    """Shared by the Auto-classify and Add manually tabs: both end up with a
+    dict of the same five dimension values, just from a different source
+    (the LLM vs. the radio buttons), so both can reuse this exact same
+    risk-area and action rendering."""
     flagged = flagged_risk_ids(use_case)
     action = recommended_action(use_case)
 
+    # Streamlit's markdown color syntax, :color[text], just styles the badge;
+    # the actual logic deciding Logged/Flagged/Block lives in mapper.py.
     action_color = {"Logged": "green", "Flagged for review": "orange", "Block recommended": "red"}[action]
     st.markdown(f"**Action:** :{action_color}[{action}]")
 
@@ -119,6 +129,9 @@ with tab_auto:
         st.warning("Session classification limit reached. Restart the app to reset it.")
 
     if classify_clicked:
+        # Counted even if the call below fails, intentionally: the API call
+        # already happened and was already billed, so the budget should
+        # reflect attempts, not just successes.
         st.session_state.classification_count += 1
         with st.spinner("Classifying..."):
             try:
@@ -129,6 +142,8 @@ with tab_auto:
 
         if pred:
             st.success("Classified and logged.")
+            # One metric tile per dimension, in the same order classifier.py
+            # asks the model for them.
             cols = st.columns(5)
             labels = {
                 "tool_access": "Tool and access",
@@ -166,6 +181,10 @@ with tab_register:
         "the illustrative examples from the thesis itself (Table 4)."
     )
 
+    # Re-run the mapper over every entry on each page load, rather than
+    # storing the flagged risks and action at the time an entry was added.
+    # That way an edit to mapper.py's rules is reflected immediately for
+    # every past entry too, not just new ones.
     rows = []
     for entry in st.session_state.register:
         flagged = flagged_risk_ids(entry)

@@ -16,6 +16,20 @@ This project does two things the thesis itself doesn't. It turns the framework i
 - **Classifier accuracy.** Points at `eval/`, where the classifier is tested against 16 hand-written, synthetic, labeled use cases, with per-dimension accuracy reported.
 - **The framework.** The underlying tables from the thesis (four forms of use, five dimensions, the full nine-area risk-to-control comparison) laid out for reference.
 
+## How to use it
+
+Once `streamlit run app.py` opens the app in your browser, there are five tabs across the top.
+
+**Auto-classify** is the main one. Type a plain-language description of something a bank employee did with a generative AI tool, for example "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan," and click Classify and log. You'll get back five tiles (one per dimension the thesis defines), the model's one-line reasoning, and a panel below showing every risk area that applies, each with its control objective, suggested controls, who'd typically be responsible, and the thesis's own stated limitation of that control. At the top of that panel is an Action badge: green "Logged" for routine, low-risk activity, orange "Flagged for review" for something a bank's compliance or risk team would want to look at, red "Block recommended" for a combination (like confidential client data going to an unapproved public tool) that a policy would typically stop outright. Every classification, successful or not, counts against a session limit shown just above the button, there to cap how many paid API calls one sitting can rack up; it resets if you restart the app.
+
+**Register** is the running log, every use case you've added, by hand or through Auto-classify, in one table, downloadable as a CSV. It starts pre-loaded with six example use cases pulled straight from the thesis itself (Table 4), so there's always something to look at even before you add your own.
+
+**Add manually** is the same risk and control analysis, but you build the use case yourself from dropdowns instead of typing a description, useful for testing a specific combination directly, or if you don't want to use an API key at all for that part.
+
+**Classifier accuracy** explains, and points you to, the evaluation script. It doesn't run anything itself, the actual numbers only exist once you run `python eval/run_eval.py` yourself.
+
+**The framework** is pure reference, the thesis's own tables (the four forms of use, the five dimensions, the full risk-to-control comparison) laid out so you can look something up without re-opening the thesis PDF.
+
 ## Why this design
 
 The risk-to-action logic in `mapper.py` is a simplified, rule-based heuristic, not a formal risk engine, deliberately mirroring the thesis's own disclaimer that it identifies circumstances in which risk mechanisms may arise rather than assigning formal risk ratings (Section 1.2). The thresholds follow the proportionality logic set out in Section 5.2: individual assessment matters more when the tool can reach confidential information, when the output is customer-facing or supports regulated work, when generated code enters an internal system, or when the employee cannot evaluate the output independently.
