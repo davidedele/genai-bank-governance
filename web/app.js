@@ -285,9 +285,9 @@ function field(label,input,hint=''){
   ,hint));
   return wrapper;
 }
-function input(id,value='',max=160){
+function input(id,value='',max=160,placeholder=''){
   return el('input',{
-    id,value,maxlength:max
+    id,value,maxlength:max,placeholder
   }
   );
 }
@@ -322,7 +322,7 @@ function updateSaveState(){
   if(!save)return;
   readForm();
   const missing=[];
-  if(!state.name.trim())missing.push('a name');
+  if(!state.name.trim())missing.push('a title');
   if(!state.owner.trim())missing.push('an owner');
   if(!state.reviewer.trim())missing.push('a reviewer');
   if(!$('confirm-review').checked)missing.push('your confirmation');
@@ -348,7 +348,7 @@ function renderAssess(){
   const grid=el('div',{class:'assess-grid'}),left=el('form',{id:'assessment-form'}),right=el('div',{id:'decision-panel'});
 
   const extraction=panel(el('h2',{class:'panel-title'},'Describe the activity'),
-    field('Name',input('case-name',state.name)),
+    field('Short title for this use case',input('case-name',state.name,160,'For example: Summarizing a client email'),'This is how it will be listed in the register.'),
     field('What did the employee do?',el('textarea',{id:'description',maxlength:1500,placeholder:'Which tool, what information, what task, and how the output was used or checked.'},state.description)));
   const where=boot.live_enabled?boot.provider+(boot.model?' ('+boot.model+')':''):'';
   if(aiUsable()){
