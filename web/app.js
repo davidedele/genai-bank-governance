@@ -69,10 +69,7 @@ function heading(title,description){
   return el('div',{
     class:'page-title'
   }
-  ,el('div',{
-    class:'tagline'
-  }
-  ,'USE-CASE GOVERNANCE'),el('h1',{
+  ,el('h1',{
   }
   ,title),el('p',{
     class:'lead'
@@ -101,7 +98,7 @@ function show(page){
     else n.removeAttribute('aria-current');
   }
   );
-  $('breadcrumb').textContent='WORKSPACE / '+page.toUpperCase();
+  $('breadcrumb').textContent={overview:'Overview',assess:'Assess a use case',register:'Register',framework:'Framework',validation:'Test results'}[page]||page;
   notice('');
   if(page==='overview')renderOverview();
   if(page==='assess')renderAssess();
@@ -124,88 +121,74 @@ function newAssessment(example=null){
   state.reviewer='';
   show('assess');
 }
+const CHANGE_FIELDS=['tool_access','information_involved','role_of_output','banking_process','task_expertise','approval_status'];
+function fieldLabel(id){
+  if(id==='approval_status')return 'Approval of this specific use';
+  const d=boot.dimensions.find(x=>x.id===id);
+  return d?d.name:id;
+}
+function sentence(text){
+  const t=text.replace(/^Synthetic example: /,'');
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+function pairCard(side){
+  return el('button',{class:'pair-card',type:'button',on:{click:()=>newAssessment(side)}},
+    el('strong',{},side.name),
+    el('span',{class:'pair-desc'},sentence(side.description)),
+    badge(side.assessment.outcome));
+}
+function pairSlide(pair,index,total){
+  const changes=CHANGE_FIELDS.filter(f=>pair.a.case[f]!==pair.b.case[f]);
+  return el('div',{class:'pair-slide',role:'group','aria-roledescription':'slide','aria-label':(index+1)+' of '+total},
+    el('h3',{},pair.title),
+    pairCard(pair.a),
+    el('div',{class:'pair-change'},changes.map(f=>el('p',{},el('strong',{},fieldLabel(f)),' changes from ',pair.a.case[f],' to ',pair.b.case[f],'.'))),
+    pairCard(pair.b));
+}
+function pairCarousel(){
+  const pairs=boot.lookalikes,total=pairs.length;
+  const track=el('div',{class:'pair-track',tabindex:'0','aria-label':'Examples that look alike but get different outcomes'},pairs.map((p,i)=>pairSlide(p,i,total)));
+  const prev=el('button',{type:'button',class:'pair-arrow','aria-label':'Previous example'},'\u2039');
+  const next=el('button',{type:'button',class:'pair-arrow','aria-label':'Next example'},'\u203a');
+  const counter=el('span',{class:'pair-count','aria-live':'polite'});
+  const dots=pairs.map((p,i)=>el('button',{type:'button',class:'pair-dot','aria-label':'Show example '+(i+1)}));
+  const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const current=()=>Math.max(0,Math.min(total-1,Math.round(track.scrollLeft/Math.max(1,track.clientWidth))));
+  const go=i=>track.scrollTo({left:Math.max(0,Math.min(total-1,i))*track.clientWidth,behavior:reduce?'auto':'smooth'});
+  function update(){
+    const i=current();
+    dots.forEach((d,k)=>{if(k===i)d.setAttribute('aria-current','true');else d.removeAttribute('aria-current');});
+    counter.textContent=(i+1)+' of '+total;
+    prev.disabled=i===0;
+    next.disabled=i===total-1;
+  }
+  let timer;
+  track.addEventListener('scroll',()=>{clearTimeout(timer);timer=setTimeout(update,50);});
+  track.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'){e.preventDefault();go(current()+1);}
+    if(e.key==='ArrowLeft'){e.preventDefault();go(current()-1);}
+  });
+  prev.addEventListener('click',()=>go(current()-1));
+  next.addEventListener('click',()=>go(current()+1));
+  dots.forEach((d,i)=>d.addEventListener('click',()=>go(i)));
+  update();
+  return el('div',{class:'pairs'},track,
+    el('div',{class:'pair-controls'},prev,el('div',{class:'pair-dots'},dots),next,counter),
+    el('p',{class:'pair-note'},'Made-up examples that show how the sample policy reacts. Select a card to open it.'));
+}
 function renderOverview(){
   const root=$('overview');
   root.replaceChildren();
-  const publicCase=boot.examples[0],clientCase=boot.examples[1];
-  const comparison=el('div',{
-    class:'comparison'
-  }
-  ,el('div',{
-    class:'comparison-title'
-  }
-  ,el('span',{
-    class:'small-label'
-  }
-  ,'SAME TOOL. DIFFERENT INFORMATION.'),el('span',{
-    class:'small-label'
-  }
-  ,'ILLUSTRATION')));
-  for(const example of [publicCase,clientCase])comparison.append(el('div',{
-    class:'compare-item'
-  }
-  ,el('h3',{
-  }
-  ,example.name),el('p',{
-  }
-  ,'Approved enterprise assistant / reviewed internal draft'),badge(example.assessment.outcome)));
-  comparison.append(el('p',{
-    class:'comparison-note'
-  }
-  ,'Only the information category changes. These are synthetic examples, not measured outcomes.'));
-  root.append(el('div',{
-    class:'hero'
-  }
-  ,el('div',{
-    class:'hero-copy'
-  }
-  ,el('div',{
-    class:'tagline'
-  }
-  ,'FROM THESIS TO WORKING PROTOTYPE'),el('h1',{
-  }
-  ,'Govern the use,',el('br'),'not just the tool.'),el('p',{
-    class:'lead'
-  }
-  ,'Describe an employee AI activity. Examine the information, reliance and context. Connect the resulting risks to controls and accountable owners.'),el('div',{
-    class:'actions'
-  }
-  ,button('Assess a use case',()=>newAssessment(),true),button('Explore the framework',()=>show('framework')))),comparison));
-  const metrics=el('div',{
-    class:'metrics'
-  }
-  );
-  [[4,'Forms of employee use'],[5,'Comparison dimensions'],[9,'Risk-to-control areas'],[boot.examples.length,'Synthetic examples']].forEach(([n,label])=>metrics.append(el('div',{
-    class:'metric'
-  }
-  ,el('strong',{
-  }
-  ,n),el('span',{
-  }
-  ,label))));
-  root.append(metrics,el('div',{
-    class:'section-head'
-  }
-  ,el('h2',{
-  }
-  ,'Explore the example library'),el('p',{
-  }
-  ,'Examples are never counted as saved records.')));
-  const cards=el('div',{
-    class:'cards'
-  }
-  );
-  boot.examples.forEach((e,i)=>cards.append(el('button',{
-    class:'sample',type:'button',on:{
-      click:()=>newAssessment(e)
-    }
-  }
-  ,el('span',{
-    class:'small-label'
-  }
-  ,'SYNTHETIC CASE '+String(i+1).padStart(2,'0')),el('h3',{
-  }
-  ,e.name),badge(e.assessment.outcome))));
+  root.append(el('div',{class:'hero'},
+    el('div',{class:'hero-copy'},
+      el('h1',{},'Govern the use,',el('br'),'not just the tool.'),
+      el('p',{class:'lead'},'Describe what an employee did with an AI tool. See which risks and controls apply, and keep a record of your review.'),
+      el('div',{class:'actions'},button('Assess a use case',()=>newAssessment(),true),button('Explore the framework',()=>show('framework')))),
+    pairCarousel()));
+  root.append(el('div',{class:'section-head'},el('h2',{},'Or start from an example'),el('p',{},'All examples are made up. They are not saved until you save them.')));
+  const cards=el('div',{class:'cards'});
+  boot.examples.forEach((e,i)=>cards.append(el('button',{class:'sample',type:'button',on:{click:()=>newAssessment(e)}},
+    el('span',{class:'small-label'},'Example '+(i+1)),el('h3',{},e.name),badge(e.assessment.outcome))));
   root.append(cards);
 }
 function field(label,input,hint=''){
@@ -700,7 +683,7 @@ function renderFramework(){
 }
 function renderValidation(){
   const root=$('validation');
-  root.replaceChildren(heading('Evidence before confidence','Software tests, extraction evaluation and real-world effectiveness answer different questions. Keep their results separate.'),el('div',{
+  root.replaceChildren(heading('Test results','Software tests, extraction evaluation and real-world effectiveness answer different questions. Keep their results separate.'),el('div',{
     class:'danger-note'
   }
   ,el('strong',{
@@ -751,7 +734,8 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
 api('/api/bootstrap').then(data=>{
   boot=data;
   $('version').textContent='v'+boot.version;
-  $('mode-label').textContent=boot.live_enabled?'Live calls enabled':'Live calls off';
+  $('mode-label').textContent=boot.live_enabled?'AI suggestions on':'AI suggestions off';
+  $('mode-label').title=boot.live_enabled?'Descriptions are sent to '+boot.provider+' only when you ask for a suggestion and confirm.':'Nothing you type leaves this computer. Turn AI suggestions on in .env (see the README).';
   show('overview');
 }
 ).catch(e=>notice('Could not start the workspace: '+e.message,true));

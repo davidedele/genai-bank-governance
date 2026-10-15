@@ -85,7 +85,7 @@ with sync_playwright() as p:
     assert len(client.get('/api/export/json').json()) == 5
     assert client.get('/api/export/csv').is_success
     report['checks'].append('CSV and JSON exports succeed and include all revisions.')
-    page.get_by_role('button', name='Validation', exact=False).click()
+    page.get_by_role('button', name='Test results', exact=False).click()
     assert page.get_by_text('Live-model accuracy is not established.', exact=False).is_visible()
     page.screenshot(path=str(root / 'validation-desktop.png'), full_page=True)
     page.get_by_role('button', name='Framework', exact=False).click()

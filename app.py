@@ -16,7 +16,7 @@ from mapper import assess_use_case, load_policy
 from storage import Store, ConflictError, export_csv, daily_limit_from_env
 from classifier import classify_with_metadata, ClassificationError
 from providers import current_model, current_provider_id, ProviderError
-from demo_examples import examples
+from demo_examples import examples, lookalike_pairs
 from auto_log import read_metadata_events
 ROOT = Path(__file__).resolve().parent
 
@@ -101,7 +101,7 @@ def create_app(db_path: Path | None=None):
             model = current_model(provider)
         except ProviderError:
             pass
-        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'live_enabled': live, 'provider': provider, 'model': model, 'daily_limit': daily_limit_from_env()}
+        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'lookalikes': [{**p, 'a': {**p['a'], 'assessment': assess_use_case(p['a']['case'])}, 'b': {**p['b'], 'assessment': assess_use_case(p['b']['case'])}} for p in lookalike_pairs()], 'live_enabled': live, 'provider': provider, 'model': model, 'daily_limit': daily_limit_from_env()}
 
     @application.post('/api/assess')
     def assess(body: AssessRequest):
