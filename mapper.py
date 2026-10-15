@@ -1,111 +1,85 @@
-"""
-Rule-based mapping from a use case's five dimension values to the relevant
-risk areas in data/framework.py.
+"""Explainable use-case triage. The policy is illustrative, not a risk rating."""
+import hashlib
+import json
+from pathlib import Path
+from copy import deepcopy
+from data.framework import DIMENSIONS, RISK_AREAS
+from schema import FRAMEWORK_VERSION, SCHEMA_VERSION, UNKNOWN, APPROVAL_OPTIONS, normalize_case, unresolved_fields
+POLICY_PATH = Path(__file__).resolve().parent / 'data' / 'policy.json'
+OUTCOMES = ['Standard controls', 'Clarification required', 'Review required', 'Do not proceed']
 
-This operationalizes the proportionate, risk-based logic the thesis itself
-describes in Section 5.2: an individual assessment becomes more relevant
-when the tool can reach confidential information, when the output is
-customer-facing or supports regulated work, when generated code enters an
-internal system, or when the employee cannot independently evaluate the
-result. It is a simplified, illustrative heuristic, not a formal risk
-rating, consistent with the thesis's own disclaimer that it does not assign
-risk ratings to individual use cases (Section 1.2).
-"""
+def load_policy(path: Path=POLICY_PATH) -> dict:
+    policy = json.loads(Path(path).read_text(encoding='utf-8'))
+    validate_policy(policy)
+    return policy
 
-from data.framework import RISK_AREAS
+def validate_policy(policy: dict) -> None:
+    allowed = {d['id']: d['options'] + [UNKNOWN] for d in DIMENSIONS}
+    allowed['approval_status'] = APPROVAL_OPTIONS
+    risk_ids = {r['id'] for r in RISK_AREAS}
+    if not isinstance(policy, dict) or not isinstance(policy.get('version'), str) or (not policy['version']):
+        raise ValueError('Policy needs a nonempty version.')
+    for group in ('risk_rules', 'triage_rules'):
+        rules = policy.get(group)
+        if not isinstance(rules, list) or not rules:
+            raise ValueError('Policy rule groups must be nonempty lists.')
+        ids = set()
+        for rule in rules:
+            if not isinstance(rule, dict) or not isinstance(rule.get('id'), str) or rule['id'] in ids:
+                raise ValueError('Policy identifiers must be unique within a group.')
+            ids.add(rule['id'])
+            if not isinstance(rule.get('reason'), str) or not rule['reason']:
+                raise ValueError('Every rule needs a reason.')
+            if group == 'risk_rules' and rule['id'] not in risk_ids:
+                raise ValueError('Policy references an unknown thesis risk area.')
+            if group == 'triage_rules' and rule.get('outcome') not in OUTCOMES[2:]:
+                raise ValueError('Triage rules may only escalate to review or do-not-proceed.')
+            if not (rule.get('any') or rule.get('all')):
+                raise ValueError('Unconditional policy rules are not supported.')
+            for key in ('any', 'all'):
+                if key in rule and (not isinstance(rule[key], list) or not rule[key]):
+                    raise ValueError('Condition lists must be nonempty.')
+                for c in rule.get(key, []):
+                    if not isinstance(c, dict) or c.get('field') not in allowed or (not isinstance(c.get('in'), list)) or (not c['in']):
+                        raise ValueError('Invalid policy condition.')
+                    if any((v not in allowed[c['field']] for v in c['in'])):
+                        raise ValueError('Policy contains an unknown category.')
 
-SENSITIVE_INFO = {"Confidential or proprietary information", "Personal or client data"}
-EXTERNAL_TOOL = {
-    "Public service, not approved for this task",
-    "Public service, approved for this task",
-    "Enterprise tool",
-}
-UNAPPROVED_TOOL = {"Public service, not approved for this task"}
-HEAVY_RELIANCE_OUTPUT = {
-    "Recommendation used to support a decision",
-    "Content used with limited or no review",
-}
-REGULATED_PROCESS = {"Process involving customers", "Process involving compliance or regulation"}
-LOW_EXPERTISE = {"Outside the employee's expertise"}
+def _matches(rule: dict, case: dict) -> bool:
+    test = lambda c: case[c['field']] in c['in']
+    return (not rule.get('all') or all((test(c) for c in rule['all']))) and (not rule.get('any') or any((test(c) for c in rule['any'])))
 
+def assess_use_case(raw: dict, policy: dict | None=None) -> dict:
+    case = normalize_case(raw)
+    policy = load_policy() if policy is None else deepcopy(policy)
+    validate_policy(policy)
+    risks = [r for r in policy['risk_rules'] if _matches(r, case)]
+    hits = [r for r in policy['triage_rules'] if _matches(r, case)]
+    missing = unresolved_fields(case)
+    if any((r['outcome'] == 'Do not proceed' for r in hits)):
+        outcome = 'Do not proceed'
+    elif hits:
+        outcome = 'Review required'
+    elif missing:
+        outcome = 'Clarification required'
+    else:
+        outcome = 'Standard controls'
+    # The thesis combines security and provider dependency in one descriptive label.
+    contexts = []
+    if case['tool_access'] == 'Internal application connected to bank systems':
+        contexts.append('Connected-access security applies; third-party dependency is not established by this category alone.')
+    if missing:
+        contexts.append('Missing information must be resolved; known review or stop reasons remain in force.')
+    if not hits and (not missing):
+        contexts.append('No additional escalation under this illustrative policy. Baseline controls still apply; this is not approval.')
+    policy_bytes = json.dumps(policy, sort_keys=True, separators=(',', ':')).encode()
+    return {'outcome': outcome, 'risk_ids': [r['id'] for r in RISK_AREAS if any((r['id'] == x['id'] for x in risks))], 'risk_reasons': {r['id']: r['reason'] for r in risks}, 'rule_hits': [{'id': r['id'], 'reason': r['reason'], 'outcome': r['outcome']} for r in hits], 'unresolved': missing, 'notes': contexts, 'baseline_controls': ['Use only within the assessed purpose and approved data boundary.', 'Verify material outputs and retain proportionate review evidence.'], 'policy_version': policy['version'], 'policy_sha256': hashlib.sha256(policy_bytes).hexdigest(), 'policy_snapshot': policy, 'framework_version': FRAMEWORK_VERSION, 'schema_version': SCHEMA_VERSION, 'risk_details': deepcopy([r for r in RISK_AREAS if any((r['id'] == x['id'] for x in risks))]), 'framework_sha256': hashlib.sha256(json.dumps(RISK_AREAS, sort_keys=True, separators=(',', ':')).encode()).hexdigest()}
 
 def flagged_risk_ids(use_case: dict) -> list[str]:
-    """Given a dict with tool_access, information_involved, role_of_output,
-    banking_process and task_expertise keys, return the ids of the risk
-    areas that apply."""
-    flags = set()
-
-    info = use_case["information_involved"]
-    tool = use_case["tool_access"]
-    role = use_case["role_of_output"]
-    process = use_case["banking_process"]
-    expertise = use_case["task_expertise"]
-
-    if info in SENSITIVE_INFO:
-        flags.add("confidentiality")
-    if info == "Personal or client data":
-        flags.add("privacy")
-    if tool in EXTERNAL_TOOL:
-        flags.add("infosec_third_party")
-    if role in HEAVY_RELIANCE_OUTPUT or expertise in LOW_EXPERTISE:
-        flags.add("output_reliability")
-        flags.add("human_review")
-    if role == "Generated code deployed to an internal system":
-        flags.add("generated_code")
-    if tool in UNAPPROVED_TOOL:
-        flags.add("shadow_ai")
-
-    # "Significant" uses, per the thesis's own proportionality test in 5.2:
-    # the tool reaches confidential information, the output is customer-facing
-    # or supports regulated work, generated code enters a system, or the
-    # employee cannot evaluate the output independently.
-    significant = (
-        info in SENSITIVE_INFO
-        or process in REGULATED_PROCESS
-        or role in HEAVY_RELIANCE_OUTPUT
-        or role == "Generated code deployed to an internal system"
-        or expertise in LOW_EXPERTISE
-    )
-    if significant:
-        flags.add("traceability")
-        flags.add("accountability")
-
-    # keep RISK_AREAS order rather than set order
-    ordered_ids = [r["id"] for r in RISK_AREAS]
-    return [rid for rid in ordered_ids if rid in flags]
-
+    return assess_use_case(use_case)['risk_ids']
 
 def recommended_action(use_case: dict) -> str:
-    """A coarse, illustrative action for the usage log: what a bank's
-    acceptable-use policy might trigger automatically for this combination,
-    per the proportionate approach in Section 5.2 of the thesis. This is a
-    simplified stand-in for an actual policy engine, not a compliance
-    determination."""
-    info = use_case["information_involved"]
-    tool = use_case["tool_access"]
-    role = use_case["role_of_output"]
-    process = use_case["banking_process"]
-
-    sensitive = info in SENSITIVE_INFO
-    unapproved = tool in UNAPPROVED_TOOL
-    regulated = process in REGULATED_PROCESS
-    heavy_reliance = role in HEAVY_RELIANCE_OUTPUT or role == "Generated code deployed to an internal system"
-
-    # Block is specifically for the thesis's own Table 4 scenario: sensitive
-    # data reaching a tool that isn't approved for it. "Regulated process"
-    # alone used to be enough to trigger this too, which meant anything
-    # touching a compliance-adjacent topic (summarizing a public press
-    # release about a rate decision, say) got blocked purely because the
-    # classifier defaults tool_access to "not approved" whenever a
-    # description doesn't name the tool, not because anything sensitive was
-    # actually at risk. Block now requires both: an unapproved tool AND
-    # information that's actually sensitive.
-    if unapproved and sensitive:
-        return "Block recommended"
-    if sensitive or (regulated and heavy_reliance):
-        return "Flagged for review"
-    return "Logged"
-
+    return assess_use_case(use_case)['outcome']
 
 def risk_areas_by_id() -> dict:
-    return {r["id"]: r for r in RISK_AREAS}
+    return {r['id']: r for r in RISK_AREAS}

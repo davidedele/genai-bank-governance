@@ -1,0 +1,295 @@
+{
+  "version": "illustrative-0.2.0",
+  "description": "Illustrative triage policy. Not a legal determination, residual-risk score or permission to use a system.",
+  "risk_rules": [
+    {
+      "id": "confidentiality",
+      "reason": "Sensitive information is involved.",
+      "any": [
+        {
+          "field": "information_involved",
+          "in": [
+            "Confidential or proprietary information",
+            "Personal or client data"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "privacy",
+      "reason": "Personal or client information is involved.",
+      "any": [
+        {
+          "field": "information_involved",
+          "in": [
+            "Personal or client data"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "infosec_third_party",
+      "reason": "External processing or connected-system access needs security controls.",
+      "any": [
+        {
+          "field": "tool_access",
+          "in": [
+            "Public service, not approved for this task",
+            "Public service, approved for this task",
+            "Enterprise tool",
+            "Internal application connected to bank systems"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "output_reliability",
+      "reason": "The output affects consequential work, is relied on, or exceeds reviewer expertise.",
+      "any": [
+        {
+          "field": "role_of_output",
+          "in": [
+            "Recommendation used to support a decision",
+            "Content used with limited or no review",
+            "Generated code deployed to an internal system"
+          ]
+        },
+        {
+          "field": "task_expertise",
+          "in": [
+            "Outside the employee's expertise"
+          ]
+        },
+        {
+          "field": "banking_process",
+          "in": [
+            "Process involving customers",
+            "Process involving compliance or regulation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "human_review",
+      "reason": "Meaningful review must be established for reliance, deployment or consequential work.",
+      "any": [
+        {
+          "field": "role_of_output",
+          "in": [
+            "Recommendation used to support a decision",
+            "Content used with limited or no review",
+            "Generated code deployed to an internal system"
+          ]
+        },
+        {
+          "field": "task_expertise",
+          "in": [
+            "Outside the employee's expertise"
+          ]
+        },
+        {
+          "field": "banking_process",
+          "in": [
+            "Process involving customers",
+            "Process involving compliance or regulation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "generated_code",
+      "reason": "Generated code will enter an internal system.",
+      "any": [
+        {
+          "field": "role_of_output",
+          "in": [
+            "Generated code deployed to an internal system"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shadow_ai",
+      "reason": "The use is explicitly not approved.",
+      "any": [
+        {
+          "field": "approval_status",
+          "in": [
+            "Not approved for this use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "traceability",
+      "reason": "Significant use requires proportionate records.",
+      "any": [
+        {
+          "field": "information_involved",
+          "in": [
+            "Confidential or proprietary information",
+            "Personal or client data"
+          ]
+        },
+        {
+          "field": "banking_process",
+          "in": [
+            "Process involving customers",
+            "Process involving compliance or regulation"
+          ]
+        },
+        {
+          "field": "role_of_output",
+          "in": [
+            "Recommendation used to support a decision",
+            "Content used with limited or no review",
+            "Generated code deployed to an internal system"
+          ]
+        },
+        {
+          "field": "task_expertise",
+          "in": [
+            "Outside the employee's expertise"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "accountability",
+      "reason": "Significant use requires an accountable owner and review responsibilities.",
+      "any": [
+        {
+          "field": "information_involved",
+          "in": [
+            "Confidential or proprietary information",
+            "Personal or client data"
+          ]
+        },
+        {
+          "field": "banking_process",
+          "in": [
+            "Process involving customers",
+            "Process involving compliance or regulation"
+          ]
+        },
+        {
+          "field": "role_of_output",
+          "in": [
+            "Recommendation used to support a decision",
+            "Content used with limited or no review",
+            "Generated code deployed to an internal system"
+          ]
+        },
+        {
+          "field": "task_expertise",
+          "in": [
+            "Outside the employee's expertise"
+          ]
+        }
+      ]
+    }
+  ],
+  "triage_rules": [
+    {
+      "id": "D01",
+      "reason": "Sensitive information with explicitly unapproved use: stop and escalate.",
+      "outcome": "Do not proceed",
+      "all": [
+        {
+          "field": "information_involved",
+          "in": [
+            "Confidential or proprietary information",
+            "Personal or client data"
+          ]
+        },
+        {
+          "field": "approval_status",
+          "in": [
+            "Not approved for this use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R01",
+      "reason": "Unapproved use requires an approval decision.",
+      "outcome": "Review required",
+      "any": [
+        {
+          "field": "approval_status",
+          "in": [
+            "Not approved for this use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R02",
+      "reason": "Sensitive information requires a data-handling review.",
+      "outcome": "Review required",
+      "any": [
+        {
+          "field": "information_involved",
+          "in": [
+            "Confidential or proprietary information",
+            "Personal or client data"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R03",
+      "reason": "Generated code requires testing and change review before deployment.",
+      "outcome": "Review required",
+      "any": [
+        {
+          "field": "role_of_output",
+          "in": [
+            "Generated code deployed to an internal system"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R04",
+      "reason": "Assign a reviewer with the expertise to evaluate the result.",
+      "outcome": "Review required",
+      "any": [
+        {
+          "field": "task_expertise",
+          "in": [
+            "Outside the employee's expertise"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R05",
+      "reason": "Decision reliance or limited review requires additional oversight.",
+      "outcome": "Review required",
+      "any": [
+        {
+          "field": "role_of_output",
+          "in": [
+            "Recommendation used to support a decision",
+            "Content used with limited or no review"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "R06",
+      "reason": "Customer-facing or regulated work requires proportionate review.",
+      "outcome": "Review required",
+      "any": [
+        {
+          "field": "banking_process",
+          "in": [
+            "Process involving customers",
+            "Process involving compliance or regulation"
+          ]
+        }
+      ]
+    }
+  ]
+}

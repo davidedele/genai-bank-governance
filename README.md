@@ -10,17 +10,17 @@ This project does two things the thesis itself doesn't. It turns the framework i
 
 ## What it does
 
-- **Auto-classify.** Describe a use case in your own words (e.g. "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan"). An LLM classifies it against the thesis's five dimensions, the app maps that to the relevant risk areas and a recommended action (Logged, Flagged for review, or Block recommended), and logs the entry automatically with a timestamp.
+- **Auto-classify.** Describe a use case in your own words (e.g. "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan"). An LLM classifies it against the thesis's five dimensions, the app maps that to the relevant risk areas and an illustrative outcome (Standard controls, Clarification required, Review required or Do not proceed), and logs the entry with a timestamp.
 - **Register.** A running log of every use case, manual or auto-classified, pre-loaded with six synthetic examples inspired by the thesis's Table 4. Exportable as CSV.
 - **Add manually.** The original form-based entry: pick the form of use and a value for each dimension directly.
-- **Classifier accuracy.** Points at `eval/`, where the classifier is tested against 16 hand-written, synthetic, labeled use cases, with per-dimension accuracy reported.
+- **Classifier accuracy.** Points at `eval/`, where the classifier is checked against a benchmark of 64 synthetic prompts covering 24 scenarios. No live accuracy figure has been measured.
 - **The framework.** The underlying tables from the thesis (four forms of use, five dimensions, the full nine-area risk-to-control comparison) laid out for reference.
 
 ## How to use it
 
 Once `streamlit run app.py` opens the app in your browser, there are five tabs across the top.
 
-**Auto-classify** is the main one. Type a plain-language description of something a bank employee did with a generative AI tool, for example "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan," and click Classify and log. You'll get back five tiles (one per dimension the thesis defines), the model's one-line reasoning, and a panel below showing every risk area that applies, each with its control objective, suggested controls, who'd typically be responsible, and the thesis's own stated limitation of that control. At the top of that panel is an Action badge: green "Logged" for routine, low-risk activity, orange "Flagged for review" for something a bank's compliance or risk team would want to look at, red "Block recommended" for a combination (like confidential client data going to an unapproved public tool) that a policy would typically stop outright. Every classification, successful or not, counts against a session limit shown just above the button, there to cap how many paid API calls one sitting can rack up; it resets if you restart the app.
+**Auto-classify** is the main one. Type a plain-language description of something a bank employee did with a generative AI tool, for example "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan," and click Classify and log. You'll get back five tiles (one per dimension the thesis defines), the model's one-line reasoning, and a panel below showing every risk area that applies, each with its control objective, suggested controls, who'd typically be responsible, and the thesis's own stated limitation of that control. At the top of that panel is an Action badge: green "Standard controls" for routine, low-risk activity, blue "Clarification required" when key facts are missing, orange "Review required" for something a bank's compliance or risk team would want to look at, red "Do not proceed" for a combination (like confidential client data going to an unapproved public tool) that a policy would typically stop outright. Every classification, successful or not, counts against a session limit shown just above the button, there to cap how many paid API calls one sitting can rack up; it resets if you restart the app.
 
 **Register** is the running log, every use case you've added, by hand or through Auto-classify, in one table, downloadable as a CSV. It starts pre-loaded with six synthetic example use cases inspired by the thesis's Table 4 (their category values are illustrations, not findings from the thesis), so there's always something to look at even before you add your own.
 
@@ -64,10 +64,11 @@ Set `LLM_MODEL` in `.env` to the model you want to use; no default model is assu
 ## Evaluating the classifier
 
 ```bash
-python eval/run_eval.py
+python -m eval.run_eval --validate-only   # offline dataset and policy checks, no model calls
+python -m eval.run_eval --live             # needs ENABLE_LIVE_CLASSIFICATION=1 and a provider key
 ```
 
-This runs the classifier against the 16 cases in `eval/cases.py` and writes a full per-dimension accuracy report to `eval/results.md`. None of the test cases describe a real bank or real client data, they were written for this project to test whether the classifier recovers the same dimension values a human reviewer would assign from a plain description.
+The validation run checks the 64 prompts in `eval/benchmark.json` against the policy rules without calling a model. The live run sends them to your configured provider and writes results under `eval/results/`. None of the test cases describe a real bank or real client data, they were written for this project to test whether the classifier recovers the same dimension values a human reviewer would assign from a plain description.
 
 ## Running the tests
 
@@ -113,8 +114,8 @@ data/framework.py    the four forms of use, five dimensions and risk-to-control 
 mapper.py             rule-based mapping from a use case's dimensions to risk areas and an action
 classifier.py          LLM-based classification of a free-text description into the five dimensions
 providers.py           picks and calls the model provider (Anthropic, OpenAI, Grok, Gemini) behind classifier.py
-eval/cases.py         16 hand-labeled synthetic use cases
-eval/run_eval.py      runs the classifier against eval/cases.py and reports accuracy
+eval/benchmark.json   64 synthetic prompts in 24 scenarios, with expected policy outcomes
+eval/run_eval.py      validates the benchmark offline and runs the optional live evaluation
 app.py                 the Streamlit app
 claude-plugin/         optional metadata-only prompt-event hook
 tests/                 pytest suite for mapper.py, classifier.py and providers.py (no real API calls)

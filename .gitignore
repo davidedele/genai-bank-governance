@@ -6,7 +6,7 @@ venv/
 .env
 .env.*
 !.env.example
-eval/results.md
+eval/results/local-*
 data/auto_log.jsonl
 *.patch
 *.bundle

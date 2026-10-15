@@ -1,119 +1,104 @@
-"""
-Runs the classifier in classifier.py against the labeled synthetic cases in
-eval/cases.py and reports per-dimension accuracy, plus how often the
-resulting risk-area flags and recommended action match what the hand-labeled
-ground truth would produce.
-
-Usage:
-    export $(cat .env | xargs)   # or set LLM_PROVIDER / the matching key directly
-    python eval/run_eval.py
-
-LLM_PROVIDER (default "anthropic") picks which model does the classifying;
-see providers.py and .env.example for the full list and their key variables.
-
-Writes a report to eval/results.md and prints a summary to the terminal.
-"""
-
-import sys
+"""Separate extraction evaluation from policy tests. No live calls without --live."""
+import argparse
+import hashlib
+import json
+import os
+import platform
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+from eval.cases import CASES, DATASET, DATASET_PATH
+from schema import DIMENSION_IDS, normalize_case
+from mapper import assess_use_case, load_policy
+from classifier import classify_with_metadata, ClassificationError
+FIELDS = ['forms', *DIMENSION_IDS, 'approval_status']
 
-# This script lives in eval/, but imports data/, mapper.py and classifier.py
-# from the project root, so the root needs to be on the import path. Running
-# it as `python eval/run_eval.py` from the project root, as the usage note
-# above says, is what makes this necessary.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+def validate_benchmark():
+    ids = set()
+    for c in CASES:
+        assert c['id'] not in ids
+        ids.add(c['id'])
+        assert len(c['description']) <= 1500
+        normalize_case(c['ground_truth'], require_all=True)
+        assert c['expected_outcome'] in ['Standard controls', 'Clarification required', 'Review required', 'Do not proceed']
+    return {'prompts': len(CASES), 'semantic_scenarios': len({c['scenario_id'] for c in CASES}), 'dataset_sha256': hashlib.sha256(DATASET_PATH.read_bytes()).hexdigest()}
 
-from data.framework import DIMENSIONS
-from mapper import flagged_risk_ids, recommended_action
-from classifier import classify_use_case, ClassificationError
-from eval.cases import CASES
-
-DIM_IDS = [d["id"] for d in DIMENSIONS]
-
+def summarize(cases, results):
+    if len(cases) != len(results):
+        raise ValueError('Every attempted case must have a result, including failures.')
+    n = len(cases)
+    correct = {f: 0 for f in FIELDS}
+    failures = exact = risk_exact = action_exact = missed = 0
+    tp = fp = fn = required = 0
+    for c, r in zip(cases, results):
+        expected = c['expected_outcome']
+        needs_review = expected in ['Review required', 'Do not proceed']
+        required += int(needs_review)
+        if r.get('error') or r.get('prediction') is None:
+            failures += 1
+            missed += int(needs_review)
+            fn += len(c['expected_risk_ids'])
+            continue
+        predicted = normalize_case(r['prediction'])
+        truth = normalize_case(c['ground_truth'])
+        matches = [predicted[f] == truth[f] for f in FIELDS]
+        for f, match in zip(FIELDS, matches):
+            correct[f] += int(match)
+        exact += int(all(matches))
+        assessment = assess_use_case(predicted)
+        actual_risks = set(assessment['risk_ids'])
+        expected_risks = set(c['expected_risk_ids'])
+        tp += len(actual_risks & expected_risks)
+        fp += len(actual_risks - expected_risks)
+        fn += len(expected_risks - actual_risks)
+        risk_exact += int(actual_risks == expected_risks)
+        actual = assessment['outcome']
+        action_exact += int(actual == expected)
+        missed += int(needs_review and (actual not in ['Review required', 'Do not proceed'] or (expected == 'Do not proceed' and actual != 'Do not proceed')))
+    rate = lambda x, d: round(x / d, 6) if d else None
+    return {'attempted': n, 'failures': failures, 'failure_rate': rate(failures, n), 'field_accuracy_all_attempts': {f: rate(x, n) for f, x in correct.items()}, 'exact_classification_all_attempts': rate(exact, n), 'risk_set_exact_all_attempts': rate(risk_exact, n), 'action_exact_all_attempts': rate(action_exact, n), 'risk_precision': rate(tp, tp + fp), 'risk_recall_including_failures': rate(tp, tp + fn), 'required_escalation_cases': required, 'missed_escalations_including_failures': missed, 'scope': 'Agreement with synthetic labels and illustrative policy, not empirical risk reduction.'}
 
 def main():
-    per_dim_correct = {dim_id: 0 for dim_id in DIM_IDS}
-    per_dim_correct["form"] = 0
-    risk_set_matches = 0
-    action_matches = 0
-    rows = []
-    failures = 0
-
-    for i, case in enumerate(CASES, start=1):
-        gt = case["ground_truth"]
-        try:
-            pred = classify_use_case(case["description"])
-        except ClassificationError as e:
-            print(f"[{i}] classification failed: {e}")
-            failures += 1
-            continue
-
-        # "Correct" here is an exact string match against the hand-labeled
-        # value for each dimension. There's no partial credit; a close but
-        # wrong value (e.g. "Enterprise tool" instead of "Internal
-        # application connected to bank systems") counts as a miss on that
-        # dimension, same as a value that's completely off.
-        correct_fields = []
-        for key in ["form"] + DIM_IDS:
-            is_correct = pred.get(key) == gt.get(key)
-            per_dim_correct[key] += int(is_correct)
-            correct_fields.append(is_correct)
-
-        # This is the metric that actually matters more than per-dimension
-        # accuracy: even if the classifier gets a dimension slightly wrong,
-        # what matters for the register is whether it still lands on the
-        # same risk areas and the same recommended action as a human would.
-        gt_risks = set(flagged_risk_ids(gt))
-        pred_risks = set(flagged_risk_ids(pred))
-        risks_match = gt_risks == pred_risks
-        risk_set_matches += int(risks_match)
-
-        gt_action = recommended_action(gt)
-        pred_action = recommended_action(pred)
-        action_match = gt_action == pred_action
-        action_matches += int(action_match)
-
-        rows.append(
-            {
-                "n": i,
-                "description": case["description"][:70] + "...",
-                "fields_correct": f"{sum(correct_fields)}/{len(correct_fields)}",
-                "risk_sets_match": "yes" if risks_match else "no",
-                "action_match": f"{'yes' if action_match else 'no'} ({pred_action} vs {gt_action})",
-            }
-        )
-
-    total = len(CASES) - failures
-    if total == 0:
-        print("All classifications failed, nothing to report.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--validate-only', action='store_true')
+    parser.add_argument('--live', action='store_true')
+    parser.add_argument('--split', choices=['all', 'development', 'holdout'], default='all')
+    parser.add_argument('--output', type=Path, default=Path('eval/results/run.json'))
+    args = parser.parse_args()
+    coverage = validate_benchmark()
+    if not args.live or args.validate_only:
+        print(json.dumps({**coverage, 'live_calls': 0, 'accuracy': 'not measured'}, indent=2))
         return
-
-    lines = ["# Classifier evaluation results\n"]
-    lines.append(f"Evaluated {total} of {len(CASES)} synthetic cases ({failures} failed to classify).\n")
-    lines.append("## Per-dimension accuracy\n")
-    lines.append("| Dimension | Accuracy |")
-    lines.append("|---|---|")
-    lines.append(f"| form of use | {per_dim_correct['form']}/{total} |")
-    for dim_id in DIM_IDS:
-        lines.append(f"| {dim_id} | {per_dim_correct[dim_id]}/{total} |")
-    lines.append("")
-    lines.append(f"**Risk-area set exact match:** {risk_set_matches}/{total}")
-    lines.append(f"**Recommended-action match:** {action_matches}/{total}\n")
-    lines.append("## Per-case detail\n")
-    lines.append("| # | Description | Fields correct | Risk sets match | Action match |")
-    lines.append("|---|---|---|---|---|")
-    for r in rows:
-        lines.append(
-            f"| {r['n']} | {r['description']} | {r['fields_correct']} | "
-            f"{r['risk_sets_match']} | {r['action_match']} |"
-        )
-
-    report = "\n".join(lines)
-    out_path = Path(__file__).resolve().parent / "results.md"
-    out_path.write_text(report)
-    print(report)
-    print(f"\nWritten to {out_path}")
-
-
-if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / '.env', override=False)
+    if os.environ.get('ENABLE_LIVE_CLASSIFICATION') != '1':
+        parser.error('Enable live classification explicitly in your local configuration first.')
+    from providers import current_provider_id, current_model, PROVIDERS, ProviderError
+    try:
+        pid = current_provider_id()
+        current_model(pid)
+        if not os.environ.get(PROVIDERS[pid]['api_key_env'], '').strip():
+            raise ProviderError('The selected provider key is not configured.')
+    except ProviderError as e:
+        parser.error(str(e))
+    if args.output.exists():
+        parser.error('Output already exists. Choose a new filename before making API calls.')
+    selected = [c for c in CASES if args.split == 'all' or c['split'] == args.split]
+    results = []
+    for c in selected:
+        started = time.monotonic()
+        try:
+            prediction, metadata = classify_with_metadata(c['description'])
+            row = {'id': c['id'], 'prediction': prediction, 'metadata': metadata}
+        except ClassificationError as e:
+            row = {'id': c['id'], 'prediction': None, 'error': str(e)}
+        row['elapsed_seconds'] = round(time.monotonic() - started, 4)
+        results.append(row)
+        print(c['id'], 'failed' if row.get('error') else 'completed')
+    report = {'created_at': datetime.now(timezone.utc).isoformat(), 'python': platform.python_version(), 'dataset_version': DATASET['version'], **coverage, 'split': args.split, 'policy_snapshot': load_policy(), 'summary': summarize(selected, results), 'results': results, 'limitations': ['Synthetic cases and correlated variants; not independent observations.', 'No banking-expert adjudication or evidence of reduced operational risk.', 'Token usage is returned per successful request; it may omit charges from failed attempts.']}
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open('x', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print('Report:', args.output)
+if __name__ == '__main__':
     main()

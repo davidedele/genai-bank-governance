@@ -57,7 +57,7 @@ def render_risk_panel(use_case: dict):
 
     # Streamlit's markdown color syntax, :color[text], just styles the badge;
     # the actual logic deciding Logged/Flagged/Block lives in mapper.py.
-    action_color = {"Logged": "green", "Flagged for review": "orange", "Block recommended": "red"}[action]
+    action_color = {"Standard controls": "green", "Clarification required": "blue", "Review required": "orange", "Do not proceed": "red"}.get(action, "gray")
     st.markdown(f"**Action:** :{action_color}[{action}]")
 
     if not flagged:
