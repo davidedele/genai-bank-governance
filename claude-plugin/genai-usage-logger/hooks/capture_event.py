@@ -10,6 +10,30 @@ MAX_INPUT_BYTES = 64000
 MAX_EVENTS = 1000
 RETENTION_SECONDS = 7 * 24 * 60 * 60
 
+def write_event(path: Path, now: float, prompt_chars: int, attempts: int = 6):
+    """Take the write lock up front and retry briefly if another hook holds it."""
+    conn = sqlite3.connect(path, timeout=5, isolation_level=None)
+    try:
+        for attempt in range(attempts):
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                conn.execute('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, timestamp REAL NOT NULL,event_type TEXT NOT NULL,prompt_chars INTEGER NOT NULL)')
+                conn.execute('INSERT INTO events VALUES(?,?,?,?)', (str(uuid.uuid4()), now, 'UserPromptSubmit', prompt_chars))
+                conn.execute('DELETE FROM events WHERE timestamp<?', (now - RETENTION_SECONDS,))
+                conn.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY timestamp DESC LIMIT ?)', (MAX_EVENTS,))
+                conn.execute('COMMIT')
+                return
+            except sqlite3.OperationalError:
+                try:
+                    conn.execute('ROLLBACK')
+                except sqlite3.Error:
+                    pass
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+    finally:
+        conn.close()
+
 def capture(event: dict, path: Path):
     if not isinstance(event, dict) or event.get('hook_event_name') != 'UserPromptSubmit':
         return
@@ -28,11 +52,7 @@ def capture(event: dict, path: Path):
             pass
     # Deliberately exclude prompt content, content hashes and identifiable session paths.
     now = time.time()
-    with sqlite3.connect(path, timeout=2) as c:
-        c.execute('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, timestamp REAL NOT NULL,event_type TEXT NOT NULL,prompt_chars INTEGER NOT NULL)')
-        c.execute('INSERT INTO events VALUES(?,?,?,?)', (str(uuid.uuid4()), now, 'UserPromptSubmit', len(prompt)))
-        c.execute('DELETE FROM events WHERE timestamp<?', (now - RETENTION_SECONDS,))
-        c.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY timestamp DESC LIMIT ?)', (MAX_EVENTS,))
+    write_event(path, now, len(prompt))
     os.chmod(path, 384)
 
 def main():

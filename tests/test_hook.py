@@ -40,3 +40,33 @@ def test_hook_matches_documented_command_hook_contract():
     config = json.loads((HOOK.parent / 'hooks.json').read_text())
     command = config['hooks']['UserPromptSubmit'][0]['hooks'][0]
     assert command['type'] == 'command' and 'capture_event.py' in command['command']
+
+
+def test_write_retries_when_database_is_busy(tmp_path, monkeypatch):
+    sys.path.insert(0, str(HOOK.parent))
+    import capture_event
+    real_connect = sqlite3.connect
+    attempts = {'n': 0}
+
+    class BusyTwice:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, *args):
+            if sql == 'BEGIN IMMEDIATE':
+                attempts['n'] += 1
+                if attempts['n'] < 3:
+                    raise sqlite3.OperationalError('database is locked')
+            return self.conn.execute(sql, *args)
+
+        def close(self):
+            self.conn.close()
+
+    db = tmp_path / 'events.sqlite'
+    monkeypatch.setattr(capture_event.sqlite3, 'connect', lambda *a, **k: BusyTwice(real_connect(*a, **k)))
+    monkeypatch.setattr(capture_event.time, 'sleep', lambda seconds: None)
+    capture_event.write_event(db, 1.0, 5)
+    monkeypatch.undo()
+    assert attempts['n'] == 3
+    with real_connect(db) as c:
+        assert c.execute('SELECT COUNT(*) FROM events').fetchone()[0] == 1
