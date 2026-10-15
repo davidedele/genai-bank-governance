@@ -38,7 +38,7 @@ Sampling uses provider defaults; it is not claimed deterministic. Response and r
 
 ## Interface decision
 
-The earlier Streamlit UI was replaced with a small, dependency-light FastAPI backend and ordinary browser assets. This gives direct control over the reading order, review workflow, responsive layout and API-level tests without introducing a frontend build system. The tradeoff is maintaining explicit HTTP routes and browser state instead of Streamlit reruns.
+The interface is a small, dependency-light FastAPI backend and ordinary browser assets. This gives direct control over the reading order, review workflow, responsive layout and API-level tests without introducing a frontend build system. The tradeoff is maintaining explicit HTTP routes and browser state.
 
 No Node build is required. Python 3.10+ is required by the type syntax. The release was executed locally under Python 3.13; the included CI matrix targets 3.10 and 3.12 but has not been run remotely for this release.
 

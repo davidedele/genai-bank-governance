@@ -1,126 +1,131 @@
 # GenAI Bank Governance
 
-**A research prototype for reviewing employee AI use, not just approving AI tools.**
+**How should a bank review what employees actually do with generative AI, and not only which tools it approves?**
 
-An independent software extension of Davide Delegeanu's Bocconi bachelor's thesis, *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls* (2026).
+I looked at this question in my bachelor's thesis at Bocconi, *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls* (2026). Once the research was done, I wanted to see what the framework would feel like as a working tool. This repository is that experiment.
 
-The workspace describes an employee activity across five dimensions, maps relevant risks to the thesis's controls and responsible functions, and records a human-reviewed assessment. Optional model extraction assists data entry; a separate, inspectable policy determines the illustrative triage outcome.
+You describe what an employee did with an AI tool, answer a few questions about it, and the app shows which risks and controls apply and what kind of review is needed. You can then save the review. A language model can suggest the answers if you turn that on, but it never decides the outcome. A separate, readable set of rules does.
 
-![Workspace overview with a paired public-information and client-information example](docs/images/overview-desktop.png)
+It is a research prototype with made-up examples. It is not a compliance product and it is not meant for real customer information.
 
-## Run locally
+![The overview, with a pair of look-alike examples that get different outcomes](docs/images/overview-desktop.png)
 
-Python 3.10 or newer. The complete manual workflow runs without model credentials.
+## Run it
+
+You need Python 3.10 or newer. Everything except the optional AI suggestions works without an API key or an internet connection.
+
+In a terminal, from the repository folder:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-python -m eval.run_eval --validate-only
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-Open **http://127.0.0.1:8501**. On Windows, activate the environment with `.venv\Scripts\activate`.
+Then open **http://127.0.0.1:8501**. Press `Ctrl+C` in the terminal to stop it. On Windows, activate the environment with `.venv\Scripts\activate`.
 
-This release uses **FastAPI and a local HTML/CSS/JavaScript interface**, replacing the original Streamlit frontend. The launcher is now `python app.py`, not `streamlit run app.py`. The Python framework, optional provider layer and deterministic policy remain independently usable.
+## What you can do
 
-## What the application does
+1. Start from an empty use case or from one of the made-up examples.
+2. Describe the activity and answer the questions: the kind of use, the tool, the information involved, how the output is used, the banking process, the employee's expertise, and whether this use is approved.
+3. Watch the result on the right update as you answer. It lists the risks, the controls, who is responsible, and why each rule applied.
+4. Save your review with an owner, a reviewer and an optional note.
+5. Come back later and save a new revision. Earlier reviews are never overwritten.
+6. Export everything as JSON or as a CSV summary.
 
-1. Start with a blank use case or a clearly labelled synthetic example.
-2. Enter the known characteristics manually, or explicitly request extraction from a configured model.
-3. Resolve unknowns and correct the classification. Tool approval and approval of this particular use are separate.
-4. Examine triggered rules, relevant controls, responsible functions and remaining limitations.
-5. Record the owner, reviewer and review note. Saving does not grant permission to use a tool.
-6. Create new revisions rather than overwriting assessments. Export the complete history as JSON or a spreadsheet-safe CSV summary.
+The questions follow the five dimensions from my thesis: tool and access, information, role of the output, banking process, and task and expertise. The approval question, the "not sure yet" answers, the outcome rules and the revision history are my additions in the software, not findings of the thesis.
 
-The five thesis dimensions are **tool/access, information, role of output, banking process, and task/employee expertise**. Multiple forms of use can apply. Approval status, explicit unknowns, triage rules and record versions are software extensions, not additional empirical findings of the thesis.
+![Answering the questions while the result stays in view](docs/images/assessment-desktop.png)
 
-### Triage, not a risk score
+## What the outcomes mean
 
-| Outcome | Interpretation |
+The rules live in [`data/policy.json`](data/policy.json). An outcome says what kind of review is needed under those sample rules. It is not a risk score and it is not an approval.
+
+| Outcome | Meaning |
 |---|---|
-| Standard controls | No additional escalation under the illustrative policy; baseline controls still apply. Not approval. |
-| Clarification required | Information needed for assessment is absent. |
-| Review required | At least one explicit review condition applies. Unresolved information may still remain. |
-| Do not proceed | Sensitive information and an explicitly unapproved use trigger a stop recommendation under the sample policy. Not technical enforcement. |
+| Standard controls | Nothing extra is triggered. The baseline controls still apply. |
+| Clarification required | Some answers are missing. |
+| Review required | At least one rule calls for a review. |
+| Do not proceed | A stop rule applies, for example sensitive information in a tool not approved for it. The app only recommends this and does not block anything. |
 
-Policy rules are in [`data/policy.json`](data/policy.json). Each saved revision includes the exact policy, its hash, the applicable control text, the original prediction when available, reviewer corrections and model provenance. Historical records are not recalculated when a policy changes.
+Each saved review keeps the policy version and the reasons behind its result, so changing the policy later does not rewrite old records.
 
-![Assessment showing rule explanations, uncertainty and control responsibilities](docs/images/assessment-desktop.png)
+![The register of saved reviews](docs/images/register-desktop.png)
 
-## Optional model extraction
+## Optional: AI suggestions
+
+If you would like a model to suggest the answers from your description, install the extra dependencies:
 
 ```bash
 python -m pip install -r requirements-llm.txt
 ```
 
-Create a local `.env` by copying `.env.example` **only when you do not already have a `.env`**. Set:
+Then copy `.env.example` to `.env` (only if you do not have a `.env` yet) and fill in four things: turn the feature on, pick a provider, pick a model, and add that provider's API key. For example:
 
 ```dotenv
 ENABLE_LIVE_CLASSIFICATION=1
-LLM_PROVIDER=anthropic
-LLM_MODEL=your-account-model-identifier
-ANTHROPIC_API_KEY=your-local-key
+LLM_PROVIDER=openai
+LLM_MODEL=the-model-name-from-your-provider-account
+OPENAI_API_KEY=your-key
 ```
 
-Supported adapter choices are `anthropic`, `openai`, `grok` and `gemini`; use the corresponding key name from `.env.example`. Choose a model that supports the selected text endpoint. No model availability, cost or accuracy is implied. Restart the app after editing configuration.
+`LLM_PROVIDER` can be `openai`, `anthropic`, `gemini` or `grok`. There is no default model, because model names change often and depend on your account. Use one your provider lists. Restart the app after editing `.env`.
 
-Extraction requires explicit confirmation in the interface before a description is sent to the provider. JSON/schema validation catches malformed output, not all semantic errors or prompt injection. Exact evidence excerpts aid review; they are not proof that an inferred category is true. Models can return unknown values, and reviewers can correct fields before saving.
+With this on, the header shows "AI suggestions on" and the assessment page names the provider and model. Nothing is sent until you tick the confirmation box and press the button. Please do not send real client information.
 
-The workspace caps daily classification operations at 30. An operation can contain up to three provider attempts; this is not a monetary spending cap. SDK retries are disabled to avoid multiplying retries. Individual requests have a 25-second timeout. See [architecture and provider notes](docs/ARCHITECTURE.md).
+A suggestion can be wrong even when it is well formed, so check every answer before saving.
 
-## Verification
+### Daily limit
 
-This release was checked locally with **113 passing Python tests**. One test enumerates **1,440 valid combinations** to check policy invariants. These are not 1,440 model evaluations.
+To guard against running up charges by accident, the app allows 30 AI suggestions per day (UTC). I picked 30 as a round number that is plenty for trying it out. It is not a cost cap and it does not limit manual assessments. Change it in `.env`:
 
-The evaluation dataset contains **64 synthetic prompts representing 24 semantic scenarios**. Several prompts are correlated wording variants; labels are not independently adjudicated by banking experts. No live-model accuracy is published or implied.
+```dotenv
+DAILY_CLASSIFICATION_LIMIT=30
+```
+
+Use `0` for no limit. One suggestion can involve up to three requests to the provider if the first ones fail, so check your provider's pricing. Each request times out after 25 seconds. More detail is in the [architecture notes](docs/ARCHITECTURE.md).
+
+## What I tested, and what I did not
+
+There are 128 automated tests covering the rules, the API, the saved revisions and the exports. One of them walks through all 1,440 valid combinations of answers to check that the rules behave consistently. That is a check on the rules, not an evaluation of any model.
+
+There is also a set of 64 made-up descriptions covering 24 scenarios, for comparing model suggestions with the expected answers. I wrote the labels myself and no bank professional has reviewed them, so I do not claim any accuracy for a live model or any effect in a real bank.
+
+To run the checks without contacting a provider:
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python -m eval.run_eval --validate-only
-# Explicitly configured, billable model evaluation:
+```
+
+To run the billable model evaluation, after configuring a provider and model:
+
+```bash
 python -m eval.run_eval --live --split holdout --output eval/results/holdout-run-01.json
 ```
 
-The live evaluator includes failures in attempted-case denominators and compares outcomes against independently specified sample-policy expectations. Existing report files are never overwritten. Published reports must retain their model, dataset and policy metadata.
+More in the [verification record](docs/VERIFICATION.md), the [dataset card](docs/DATASET_CARD.md) and the [policy table](docs/POLICY.md).
 
-See the [verification record](docs/VERIFICATION.md), [dataset card](docs/DATASET_CARD.md) and [policy decision table](docs/POLICY.md).
+## Privacy and limits
 
-## Privacy and deployment boundaries
+Run it only on your own computer, with made-up or properly authorized data. Records go into a local SQLite file. The description text and model excerpts are not stored unless you choose to keep them, but names, owners, reviewers and notes always are, so keep sensitive details out of those too.
 
-**Local, single-user research prototype. Do not deploy this publicly or enter real banking/customer data.**
+There is no login, no encryption of the saved file and no tamper-proof history, and nothing here replaces a real approval process. See [privacy notes](docs/PRIVACY.md).
 
-The database is local SQLite. Descriptions, model excerpts and rationales are not persisted unless explicitly selected; record names, owner/reviewer fields and notes are always stored. Pending model classifications remain in process memory until expiry cleanup, eviction or shutdown. Do not place secrets in any field.
+There is also an optional hook for the AI coding assistant that records only that a prompt was sent (no prompt text). It cannot block anything. If you installed an earlier version of that plugin, disable it first.
 
-There is no authenticated reviewer identity, encryption at rest, tamper-proof log, legal classification or enterprise approval workflow. A database record does not prove that a control operated. Local origin/token checks are defense in depth, not a substitute for authentication.
+## How it is built
 
-The optional prompt hook is **metadata-only, opt-in and retrospective**. It makes no classification call and cannot prevent a submitted prompt. The previous raw-prompt auto-classification hook has been removed. Updating source does not unload an already installed old plugin: disable the old installation before testing the replacement. See [privacy and hook migration](docs/PRIVACY.md).
+The backend is Python with FastAPI, and the interface is plain HTML, CSS and JavaScript with no build step. Reviews are stored in SQLite, the rules are in `data/policy.json`, and the tests use pytest. The way the thesis maps to the code is in [RESEARCH_MAPPING.md](docs/RESEARCH_MAPPING.md), and [DEMO.md](docs/DEMO.md) is a short walkthrough.
 
-![Saved synthetic assessments in the local register](docs/images/register-desktop.png)
+## Reference
 
-## Project structure
+Delegeanu, D. (2026). *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls*. Bocconi University. The thesis is a literature-based analysis, not a validation against real bank data. Nothing here claims compliance with the AI Act, GDPR, DORA or any other regulation, and the controls and rules are illustrative.
 
-```text
-app.py                 Local HTTP application and boundary checks
-web/                   Responsive browser interface
-schema.py              Classification contract and explicit unknown values
-data/framework.py      Thesis taxonomy, controls and illustrative examples
-data/policy.json       Versioned, declarative triage rules
-classifier.py          Model extraction and output validation
-providers.py           Optional provider adapters and bounded retries
-mapper.py              Explainable risk/control mapping and triage
-storage.py             Local revision records and CSV/JSON export
-eval/                  Synthetic benchmark and reporting
-tests/                 Offline regression and integration checks
-claude-plugin/         Optional metadata-only prompt-event hook
-scripts/               Release hygiene and isolated UI verification
-```
+## Copyright
 
-## Research basis
+Copyright © 2026 Davide Delegeanu. All rights reserved.
 
-Delegeanu, D. (2026). *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls*. Bocconi University. Sections 3.2-3.3 define the forms and dimensions; Sections 5.2-5.6 connect use cases, controls and responsibilities. The thesis is a literature-based analytical synthesis, not empirical validation using bank workflows.
-
-This repository does not assert compliance with the AI Act, GDPR, DORA or any other legal framework. The controls and policy are illustrative. An organization would need to define its own acceptable uses, review requirements and risk acceptance.
-
-[Research-to-software mapping](docs/RESEARCH_MAPPING.md) · [Demonstration script](docs/DEMO.md) · [Change log](CHANGELOG.md)
+This repository is public so it can be read, but it is not open source. No licence is granted to copy, modify, redistribute or use the code commercially without my written permission, apart from what the law and GitHub's Terms of Service allow, such as viewing and forking on GitHub. If you would like to use or build on it, please get in touch.
