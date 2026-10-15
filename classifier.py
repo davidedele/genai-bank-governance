@@ -10,16 +10,19 @@ of what an employee is doing and return a structured classification, which
 the rest of the app then runs through the same risk-to-control mapping used
 for manually entered use cases.
 
-Requires an Anthropic API key in the ANTHROPIC_API_KEY environment
-variable. See .env.example.
+Which model does the classifying is not fixed to Claude: providers.py
+dispatches to Anthropic, OpenAI, xAI (Grok) or Google (Gemini) depending on
+the LLM_PROVIDER environment variable (default "anthropic"). This module
+doesn't know or care which one actually ran; it just sends a prompt and
+validates the text that comes back. See .env.example for how to pick a
+provider and supply its key.
 """
 
 import json
-import os
 
 from data.framework import DIMENSIONS, FORMS_OF_USE
+from providers import complete, current_model, current_provider_id, ProviderError
 
-MODEL = "claude-haiku-4-5"
 MAX_DESCRIPTION_CHARS = 1500
 
 
@@ -83,29 +86,9 @@ def classify_use_case(description: str) -> dict:
         )
 
     try:
-        import anthropic
-    except ImportError as e:
-        raise ClassificationError(
-            "The 'anthropic' package is not installed. Run: pip install anthropic"
-        ) from e
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ClassificationError(
-            "ANTHROPIC_API_KEY is not set. Copy .env.example to .env, add your "
-            "key, and load it (e.g. `export $(cat .env | xargs)`) before running."
-        )
-
-    client = anthropic.Anthropic(api_key=api_key)
-    try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=400,
-            messages=[{"role": "user", "content": _build_prompt(description)}],
-        )
-        raw = response.content[0].text.strip()
-    except Exception as e:
-        raise ClassificationError(f"Anthropic API call failed: {e}") from e
+        raw = complete(_build_prompt(description), max_tokens=400)
+    except ProviderError as e:
+        raise ClassificationError(str(e)) from e
 
     # The model is asked for raw JSON; strip code fences defensively in case
     # it wraps the output anyway.

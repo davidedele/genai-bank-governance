@@ -7,7 +7,9 @@ the thesis this project is based on, extended with an automatic classifier
 employee did and infers the five comparison dimensions itself, the same way
 a real usage log behind an LLM gateway would need to. Every entry, manual
 or automatic, is run through the same risk-to-control mapping drawn from
-the thesis's Chapter 5.
+the thesis's Chapter 5. The classifier is not tied to one model vendor;
+providers.py dispatches the actual API call to Anthropic, OpenAI, xAI
+(Grok) or Google (Gemini) depending on the LLM_PROVIDER setting in .env.
 
 Run locally with: streamlit run app.py
 """
@@ -20,6 +22,7 @@ import streamlit as st
 from data.framework import DIMENSIONS, FORMS_OF_USE, ILLUSTRATIVE_USE_CASES, RISK_AREAS
 from mapper import flagged_risk_ids, recommended_action, risk_areas_by_id
 from classifier import classify_use_case, ClassificationError, MAX_DESCRIPTION_CHARS
+from providers import PROVIDERS, current_provider_id, current_model, ProviderError
 
 MAX_CLASSIFICATIONS_PER_SESSION = 30
 
@@ -110,6 +113,18 @@ with tab_auto:
         height=100,
         max_chars=MAX_DESCRIPTION_CHARS,
     )
+
+    try:
+        _provider_id = current_provider_id()
+        st.caption(
+            f"Using **{PROVIDERS[_provider_id]['label']}** "
+            f"(model `{current_model(_provider_id)}`), set via `LLM_PROVIDER` "
+            "in `.env`. Other supported providers: "
+            + ", ".join(p["label"] for pid, p in PROVIDERS.items() if pid != _provider_id)
+            + "."
+        )
+    except ProviderError as e:
+        st.caption(f"⚠️ {e}")
 
     if "classification_count" not in st.session_state:
         st.session_state.classification_count = 0
@@ -254,9 +269,10 @@ with tab_eval:
     )
     st.code("python eval/run_eval.py", language="bash")
     st.write(
-        "It needs your own ANTHROPIC_API_KEY to run (see .env.example) and "
-        "writes a full report to eval/results.md. Run it locally and the "
-        "report there is the real result, this tab doesn't fabricate one."
+        "It needs a key for whichever provider `LLM_PROVIDER` selects in your "
+        ".env (see .env.example) and writes a full report to eval/results.md. "
+        "Run it locally and the report there is the real result, this tab "
+        "doesn't fabricate one."
     )
 
 with tab_framework:

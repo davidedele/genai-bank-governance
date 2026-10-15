@@ -5,8 +5,11 @@ resulting risk-area flags and recommended action match what the hand-labeled
 ground truth would produce.
 
 Usage:
-    export ANTHROPIC_API_KEY=sk-...
+    export $(cat .env | xargs)   # or set LLM_PROVIDER / the matching key directly
     python eval/run_eval.py
+
+LLM_PROVIDER (default "anthropic") picks which model does the classifying;
+see providers.py and .env.example for the full list and their key variables.
 
 Writes a report to eval/results.md and prints a summary to the terminal.
 """

@@ -40,12 +40,25 @@ The classifier is intentionally conservative: when a description doesn't make a 
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # add your own ANTHROPIC_API_KEY
+cp .env.example .env   # pick LLM_PROVIDER and add that provider's API key
 export $(cat .env | xargs)
 streamlit run app.py
 ```
 
 The Register, Add manually and The framework tabs work without an API key. Auto-classify and the evaluation script need one.
+
+### Choosing a model provider
+
+The classifier isn't tied to one vendor. `providers.py` supports four, selected by `LLM_PROVIDER` in `.env` (default `anthropic`):
+
+| `LLM_PROVIDER` | Model used (default) | Key variable | Get a key |
+|---|---|---|---|
+| `anthropic` | `claude-haiku-4-5` | `ANTHROPIC_API_KEY` | console.anthropic.com/settings/keys |
+| `openai` | `gpt-4o-mini` | `OPENAI_API_KEY` | platform.openai.com/api-keys |
+| `grok` | `grok-2-latest` | `XAI_API_KEY` | console.x.ai |
+| `gemini` | `gemini-2.0-flash` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+
+Set `LLM_MODEL` in `.env` to override the default model for whichever provider you picked, without touching code. OpenAI, Grok and Gemini all go through the `openai` Python package (Grok and Gemini each publish an OpenAI-compatible endpoint, so `providers.py` just points the same client at a different `base_url`); Anthropic goes through its own SDK. The Auto-classify tab shows which provider and model are active.
 
 ## Evaluating the classifier
 
@@ -59,7 +72,7 @@ This runs the classifier against the 16 cases in `eval/cases.py` and writes a fu
 
 This is a local script, not a hosted web app, so most of a typical web security checklist (authentication, user roles, database hardening, CORS) doesn't apply, there's no server, no accounts and no database. What does apply, and what this project actually does:
 
-- The API key is only ever read from an environment variable (`ANTHROPIC_API_KEY`), never hardcoded. `.env` is in `.gitignore` and was never committed; checked against the full git history, not just the latest commit.
+- The API key is only ever read from an environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` or `GEMINI_API_KEY`, depending on `LLM_PROVIDER`), never hardcoded. `.env` is in `.gitignore` and was never committed; checked against the full git history, not just the latest commit.
 - The classifier's output is validated against a fixed allow-list of values before it's used for anything (`classifier._validate`). A free-text description that tried to manipulate the model into returning an arbitrary classification would just fail validation, not get accepted.
 - Free-text input is capped at 1,500 characters, both in the UI and server-side, to bound API cost per request.
 - Classifications are capped per session (30 by default) as a simple guard against runaway API spend if this is ever deployed somewhere other than your own machine.
@@ -73,6 +86,7 @@ If you ever do deploy this somewhere public (Streamlit Community Cloud, for inst
 data/framework.py    the four forms of use, five dimensions and risk-to-control table, as data
 mapper.py             rule-based mapping from a use case's dimensions to risk areas and an action
 classifier.py          LLM-based classification of a free-text description into the five dimensions
+providers.py           picks and calls the model provider (Anthropic, OpenAI, Grok, Gemini) behind classifier.py
 eval/cases.py         16 hand-labeled synthetic use cases
 eval/run_eval.py      runs the classifier against eval/cases.py and reports accuracy
 app.py                 the Streamlit app
