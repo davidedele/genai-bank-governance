@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "Overview renders eight separated synthetic examples.",
+    "Manual review/save flow succeeds without a model or key.",
+    "Revision workflow creates a second immutable assessment.",
+    "CSV and JSON exports succeed and include all revisions.",
+    "Framework and validation pages render with no fabricated model accuracy.",
+    "390px mobile layout has no horizontal overflow on overview and assessment."
+  ],
+  "console_errors": [],
+  "page_errors": []
+}

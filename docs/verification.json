@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-15",
+  "baseline_commit": "86acc191419f109ea131a80b7e011607dc69a6d1",
+  "baseline_python_tests": 28,
+  "release_python_tests": 113,
+  "python": "3.13.5",
+  "policy_combinations_checked": 1440,
+  "dataset": {
+    "prompts": 64,
+    "semantic_scenarios": 24,
+    "dataset_sha256": "06d7b8dd4ffd4a1532d6fdc7ebb6b212b65ca8e0f47edea601c9fc3ec35fef6e",
+    "live_calls": 0,
+    "accuracy": "not measured"
+  },
+  "browser": {
+    "checks": [
+      "Overview renders eight separated synthetic examples.",
+      "Manual review/save flow succeeds without a model or key.",
+      "Revision workflow creates a second immutable assessment.",
+      "CSV and JSON exports succeed and include all revisions.",
+      "Framework and validation pages render with no fabricated model accuracy.",
+      "390px mobile layout has no horizontal overflow on overview and assessment."
+    ],
+    "console_errors": [],
+    "page_errors": []
+  },
+  "execution_scope": "Local offline execution; provider adapters mocked; actual Chromium UI with in-process HTTP fetch bridge.",
+  "not_executed": [
+    "Live provider classification",
+    "Remote GitHub Actions",
+    "Real Claude Code plugin installation",
+    "Real bank/expert validation",
+    "Public deployment security testing"
+  ]
+}
