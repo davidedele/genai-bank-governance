@@ -68,6 +68,26 @@ The suggestions use some of your Claude usage, which is why there is a daily lim
 
 Remove the `GENAI_CAPTURE_PROMPTS` line, or start Claude Code without `--plugin-dir`. Use **Delete all captured prompts** in the workspace to remove what was saved.
 
+## An example run
+
+I tried it in a live Claude Code session (version 2.1.301) with seven invented prompts. All of the names, amounts and documents in them are made up. Every prompt was saved, classified in the background and listed in the workspace within about a minute.
+
+![Claude Code session with the invented test prompts](images/claude-code-session.png)
+
+![Captured prompts in the Register, each with a suggested outcome](images/captured-prompts.png)
+
+| Invented prompt | Suggested outcome |
+|---|---|
+| Summarising a public press release with the approved enterprise assistant, edited before publishing | Standard controls |
+| Summarising a client complaint with the approved assistant, reviewed before use | Review required |
+| Summarising a card double charge complaint, with no tool or review details given | Review required |
+| Writing a Python function with the approved coding assistant and deploying it internally after a quick look | Review required |
+| Drafting a customer email with the approved assistant and sending it unread | Review required |
+| Rewriting a confidential credit memo in an unapproved public chatbot for a client | Do not proceed |
+| A vague "same as yesterday, but shorter" request | Clarification required |
+
+These suggestions look reasonable to me, but this is one session with prompts I wrote myself, so it shows that the pipeline works and not how accurate the suggestions are. Accuracy is not measured. Every suggestion still has to be checked before a review is saved.
+
 ## What has been tested
 
-The hook, the background process, the daily limit, the guard against loops, the answer checks, the workspace pages and the lookup skill are covered by automated tests that use a stand-in for the `claude` command. I have not yet run the plugin inside a live Claude Code session, and Claude Code's options can change between versions, so treat the live behaviour as unverified until you have tried it.
+The hook, the background process, the daily limit, the guard against loops, the answer checks, the workspace pages and the lookup skill are covered by automated tests that use a stand-in for the `claude` command. The example run above was done by hand in a real session. Claude Code's options can change between versions, so if something stops working after an update, check the `claude -p` call in `hooks/classify_pending.py` first.

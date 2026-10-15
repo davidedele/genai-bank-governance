@@ -120,6 +120,8 @@ There is also an optional plugin for Claude Code. It is off by default. When swi
 
 If you use Claude Code, you can have the prompts you send there show up in the Register as **Captured prompts**, with suggested answers from Claude Code itself, so no API key is involved. You still check each one and save the review yourself. It is off until you add one line to your Claude Code settings. The guide explains what is saved, where, and how to delete it: [docs/PLUGIN.md](docs/PLUGIN.md). The same explanation is in the Register page of the app.
 
+![Captured prompts in the Register, with a suggested outcome for each invented test prompt](docs/images/captured-prompts.png)
+
 ## How it is built
 
 The backend is Python with FastAPI, and the interface is plain HTML, CSS and JavaScript with no build step. Reviews are stored in SQLite, the rules are in `data/policy.json`, and the tests use pytest. The way the thesis maps to the code is in [RESEARCH_MAPPING.md](docs/RESEARCH_MAPPING.md), and [DEMO.md](docs/DEMO.md) is a short walkthrough.
