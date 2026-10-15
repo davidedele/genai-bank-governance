@@ -75,5 +75,28 @@ def flagged_risk_ids(use_case: dict) -> list[str]:
     return [rid for rid in ordered_ids if rid in flags]
 
 
+def recommended_action(use_case: dict) -> str:
+    """A coarse, illustrative action for the usage log: what a bank's
+    acceptable-use policy might trigger automatically for this combination,
+    per the proportionate approach in Section 5.2 of the thesis. This is a
+    simplified stand-in for an actual policy engine, not a compliance
+    determination."""
+    info = use_case["information_involved"]
+    tool = use_case["tool_access"]
+    role = use_case["role_of_output"]
+    process = use_case["banking_process"]
+
+    sensitive = info in SENSITIVE_INFO
+    unapproved = tool in UNAPPROVED_TOOL
+    regulated = process in REGULATED_PROCESS
+    heavy_reliance = role in HEAVY_RELIANCE_OUTPUT or role == "Generated code deployed to an internal system"
+
+    if unapproved and (sensitive or regulated):
+        return "Block recommended"
+    if sensitive or (regulated and heavy_reliance):
+        return "Flagged for review"
+    return "Logged"
+
+
 def risk_areas_by_id() -> dict:
     return {r["id"]: r for r in RISK_AREAS}
