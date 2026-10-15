@@ -114,6 +114,7 @@ data/framework.py    the four forms of use, five dimensions and risk-to-control 
 mapper.py             rule-based mapping from a use case's dimensions to risk areas and an action
 classifier.py          LLM-based classification of a free-text description into the five dimensions
 providers.py           picks and calls the model provider (Anthropic, OpenAI, Grok, Gemini) behind classifier.py
+storage.py             local SQLite store with immutable assessment revisions and CSV or JSON export (not yet used by the Streamlit page)
 eval/benchmark.json   64 synthetic prompts in 24 scenarios, with expected policy outcomes
 eval/run_eval.py      validates the benchmark offline and runs the optional live evaluation
 app.py                 the Streamlit app
