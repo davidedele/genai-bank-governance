@@ -1,0 +1,95 @@
+{
+ "type": "object",
+ "properties": {
+  "title": {
+   "type": "string",
+   "maxLength": 80,
+   "description": "A short plain title for the activity, at most 80 characters."
+  },
+  "forms": {
+   "type": "array",
+   "items": {
+    "type": "string",
+    "enum": [
+     "communication",
+     "document_processing",
+     "analytical",
+     "technical"
+    ]
+   },
+   "description": "Kinds of use described. Empty if unclear."
+  },
+  "tool_access": {
+   "type": "string",
+   "enum": [
+    "Public service, not approved for this task",
+    "Public service, approved for this task",
+    "Enterprise tool",
+    "Internal application connected to bank systems",
+    "Unknown - clarification required"
+   ],
+   "description": "Which generative AI tool is used, and how does the employee access it?"
+  },
+  "information_involved": {
+   "type": "string",
+   "enum": [
+    "Public information",
+    "Internal, non-sensitive information",
+    "Confidential or proprietary information",
+    "Personal or client data",
+    "Unknown - clarification required"
+   ],
+   "description": "What information is entered, retrieved or made accessible to the tool?"
+  },
+  "role_of_output": {
+   "type": "string",
+   "enum": [
+    "Initial draft, reviewed and revised by the employee",
+    "Recommendation used to support a decision",
+    "Content used with limited or no review",
+    "Generated code deployed to an internal system",
+    "Unknown - clarification required"
+   ],
+   "description": "How is the generated output used in the employee's work?"
+  },
+  "banking_process": {
+   "type": "string",
+   "enum": [
+    "Internal administrative process",
+    "Process involving customers",
+    "Process involving compliance or regulation",
+    "Unknown - clarification required"
+   ],
+   "description": "In which banking process is the activity performed?"
+  },
+  "task_expertise": {
+   "type": "string",
+   "enum": [
+    "Routine, within the employee's expertise",
+    "Non-routine or specialist, within expertise",
+    "Outside the employee's expertise",
+    "Unknown - clarification required"
+   ],
+   "description": "What is the nature of the task, and can the employee independently evaluate the output?"
+  },
+  "approval_status": {
+   "type": "string",
+   "enum": [
+    "Approved for this use",
+    "Not approved for this use",
+    "Unknown - clarification required"
+   ]
+  }
+ },
+ "required": [
+  "title",
+  "forms",
+  "tool_access",
+  "information_involved",
+  "role_of_output",
+  "banking_process",
+  "task_expertise",
+  "approval_status"
+ ],
+ "additionalProperties": false
+}

@@ -114,7 +114,11 @@ Run it only on your own computer, with made-up or properly authorized data. Reco
 
 There is no login, no encryption of the saved file and no tamper-proof history, and nothing here replaces a real approval process. See [privacy notes](docs/PRIVACY.md).
 
-There is also an optional hook for the AI coding assistant that records only that a prompt was sent (no prompt text). It cannot block anything. If you installed an earlier version of that plugin, disable it first.
+There is also an optional plugin for Claude Code. It is off by default. When switched on, it saves the prompts you send in Claude Code to a file on your computer, and Claude Code suggests how to classify them so you can review them in the Register without retyping. It cannot block a prompt. If you installed an earlier version of that plugin, disable it first. See [the plugin guide](docs/PLUGIN.md).
+
+## Optional: capture prompts from Claude Code
+
+If you use Claude Code, you can have the prompts you send there show up in the Register as **Captured prompts**, with suggested answers from Claude Code itself, so no API key is involved. You still check each one and save the review yourself. It is off until you add one line to your Claude Code settings. The guide explains what is saved, where, and how to delete it: [docs/PLUGIN.md](docs/PLUGIN.md). The same explanation is in the Register page of the app.
 
 ## How it is built
 

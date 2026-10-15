@@ -2,6 +2,8 @@
 import json
 import os
 import secrets
+import subprocess
+import sys
 import time
 from pathlib import Path
 from threading import Lock
@@ -18,7 +20,7 @@ from classifier import classify_with_metadata, ClassificationError
 from providers import current_model, current_provider_id, ProviderError
 from demo_examples import examples, lookalike_pairs
 from eval.cases import CASES
-from auto_log import read_metadata_events
+from auto_log import read_metadata_events, read_captured_prompts, delete_captured_prompts, default_event_db, capture_in_use
 ROOT = Path(__file__).resolve().parent
 
 class AssessRequest(BaseModel):
@@ -155,6 +157,44 @@ def create_app(db_path: Path | None=None):
         filename = os.environ.get('GENAI_EVENT_DB', '')
         enabled = os.environ.get('GENAI_LOG_METADATA') == '1' and bool(filename)
         return {'enabled': enabled, 'events': read_metadata_events(Path(filename)) if enabled else [], 'note': 'Prompt-event metadata only; these events are not classified use cases or proof of review.'}
+
+    def capture_settings():
+        """The plugin's file: GENAI_EVENT_DB, or the same default folder the plugin uses."""
+        path = Path(os.environ.get('GENAI_EVENT_DB') or default_event_db())
+        return capture_in_use(path), path
+
+    @application.get('/api/captured')
+    def captured():
+        enabled, path = capture_settings()
+        items = read_captured_prompts(path) if enabled else []
+        out = []
+        for row in items:
+            item = {'id': row['id'], 'timestamp': row['timestamp'], 'title': row['title'], 'status': row['status'], 'error': row['error'], 'preview': row['text'][:240]}
+            item['example'] = {'name': row['title'], 'description': row['text'][:1500], 'case': row['case']}
+            if row['case'] is not None:
+                item['assessment'] = assess_use_case(row['case'])
+            out.append(item)
+        counts = {s: sum(1 for i in out if i['status'] == s) for s in ('pending', 'classifying', 'classified', 'failed')}
+        return {'enabled': enabled, 'path': str(path), 'counts': counts, 'items': out, 'note': 'Captured prompts are not reviewed use cases. Suggested answers must be checked before saving.'}
+
+    @application.post('/api/captured/classify')
+    def classify_captured():
+        enabled, path = capture_settings()
+        if not enabled:
+            raise HTTPException(409, 'Prompt capture is off.')
+        script = ROOT / 'claude-plugin' / 'genai-usage-logger' / 'hooks' / 'classify_pending.py'
+        subprocess.Popen([sys.executable, str(script), str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env={**os.environ, 'GENAI_GOVERNANCE_CHILD': '1'})
+        return {'started': True}
+
+    @application.delete('/api/captured')
+    def delete_all_captured():
+        enabled, path = capture_settings()
+        return {'deleted': delete_captured_prompts(path) if enabled else 0}
+
+    @application.delete('/api/captured/{prompt_id}')
+    def delete_one_captured(prompt_id: str):
+        enabled, path = capture_settings()
+        return {'deleted': delete_captured_prompts(path, prompt_id) if enabled else 0}
 
     @application.get('/api/records')
     def records():

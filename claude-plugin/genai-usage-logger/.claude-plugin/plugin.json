@@ -1,7 +1,7 @@
 {
   "name": "genai-usage-logger",
-  "version": "0.2.0",
-  "description": "Opt-in, local prompt-event metadata. No prompt content, classification calls or enforcement.",
+  "version": "0.3.0",
+  "description": "Opt-in, local capture of prompts for the GenAI governance workspace, with suggestions from Claude Code and a skill to look up saved reviews. Off by default.",
   "author": {
     "name": "Davide Delegeanu"
   }

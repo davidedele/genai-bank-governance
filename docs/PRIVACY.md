@@ -12,7 +12,7 @@ Record names, owner/reviewer fields and review notes are always retained. Descri
 
 The previous hook recorded raw prompts and sent them for background classification after submission. That created an additional sensitive-content store and processing path without preventing the original action. Its in-memory/update logic was also a poor basis for durable concurrent records.
 
-The replacement observes **only** timestamp, event type, random event ID and prompt character count. It does not retain a prompt hash, content, transcript path, session ID or working directory. No model is called. A prompt event is not a complete business use case and is not inserted into the use-case register.
+By default the replacement observes **only** timestamp, event type, random event ID and prompt character count. Prompt text is kept only if you also set `GENAI_CAPTURE_PROMPTS=1`, as described in [PLUGIN.md](PLUGIN.md). It does not retain a prompt hash, transcript path, session ID or working directory. In the default mode no prompt content is kept and no model is called. A prompt event is not a complete business use case and is not inserted into the use-case register.
 
 ### Migrate before testing
 
@@ -46,3 +46,8 @@ The release hygiene check detects common runtime/private artifacts in tracked fi
 The shared project settings disable commit, PR and session-link attribution. No history, author or committer metadata is shipped in the source release. The installer neither stages nor commits anything. Existing local or managed settings may take precedence; ordinary Git author identity remains your own Git configuration. Avoid applying mail patches with an unwanted author header.
 
 Settings reference: https://code.claude.com/docs/en/settings-reference
+
+
+## Optional prompt capture and suggestions
+
+With `GENAI_CAPTURE_PROMPTS=1` the hook also keeps the prompt text (up to 8,000 characters) in a local file, `~/.local/share/genai-governance/events.sqlite` unless `GENAI_EVENT_DB` says otherwise, readable only by you, with at most 1,000 prompts and a seven day limit. Claude Code, run in non-interactive mode with your existing login, then suggests answers for each prompt in the background. That step sends the prompt to the same service that is already answering it, and counts against your Claude usage, bounded by `GENAI_CLASSIFY_LIMIT`. Set `GENAI_AUTO_CLASSIFY=0` to keep the text without any suggestion step. The workspace validates every suggestion, never counts a captured prompt as a reviewed use case, and can delete one or all captured prompts. Details and settings are in [PLUGIN.md](PLUGIN.md).

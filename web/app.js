@@ -25,8 +25,11 @@ function notice(message,error=false){
   $('notice').textContent=message;
   $('notice').className=error?'error':'';
 }
-async function api(path,body){
-  const options=body?{
+async function api(path,body,method){
+  const options=method==='DELETE'?{
+    method:'DELETE',headers:{'X-Workspace-Token':boot.token}
+  }
+  :body?{
     method:'POST',headers:{
       'Content-Type':'application/json','X-Workspace-Token':boot.token
     }
@@ -190,7 +193,7 @@ function updateFlow(){
   holder.replaceChildren(flow(ASSESS_STEPS,active===undefined?-1:active,done));
 }
 function newAssessment(example=null){
-  state.draft=example?structuredClone(example.case):blankCase();
+  state.draft=example&&example.case?structuredClone(example.case):blankCase();
   state.name=example?example.name:'';
   state.description=example?example.description:'';
   state.parentId=null;
@@ -524,6 +527,7 @@ async function renderRegister(){
   }
   search.addEventListener('input',renderRows);
   renderRows();
+  await captureSection(root);
   const telemetry=await api('/api/events');
   if(telemetry.enabled){
     root.append(panel(el('h3',{
@@ -535,6 +539,62 @@ async function renderRegister(){
     }
     ,telemetry.note)));
   }
+}
+
+function ago(ts){
+  const s=Math.max(0,Date.now()/1000-ts);
+  return s<90?'just now':s<5400?Math.round(s/60)+' min ago':s<172800?Math.round(s/3600)+' h ago':Math.round(s/86400)+' days ago';
+}
+const CAPTURE_STATUS={pending:['Waiting','todo'],classifying:['Working','todo'],classified:['Ready to review','ok'],failed:['Could not suggest answers','todo']};
+const CAPTURE_FLOW=[['You prompt Claude Code','Work as usual.'],['It is saved here','On this computer only.'],['Claude Code suggests answers','In the background.'],['You review and save','Only then it is a use case.']];
+async function captureSection(root){
+  let data;
+  try{data=await api('/api/captured');}catch(e){return;}
+  const box=el('div',{class:'panel capture'});
+  root.append(box);
+  async function draw(){
+    data=await api('/api/captured');
+    box.replaceChildren(el('h2',{class:'panel-title'},'Captured prompts'),
+      el('p',{class:'quiet'},'An optional feature for people who use Claude Code. The prompts you send there can be saved on this computer, and Claude Code suggests how each one would be classified, so you can review it here without retyping.'),
+      flow(CAPTURE_FLOW));
+    if(!data.enabled){
+      box.append(el('p',{class:'chip todo capture-off'},'Off'),
+        el('h3',{},'How to switch it on'),
+        el('ol',{class:'how'},
+          el('li',{},'Start Claude Code with the plugin from this project:',el('pre',{},'claude --plugin-dir /path/to/genai-bank-governance/claude-plugin/genai-usage-logger')),
+          el('li',{},'Add one line to the "env" section of your Claude Code settings file (~/.claude/settings.json):',el('pre',{},'"GENAI_CAPTURE_PROMPTS": "1"')),
+          el('li',{},'Send a prompt in Claude Code. It appears here within a minute.')),
+        el('p',{class:'hint'},'Prompts are kept for 7 days at most and never leave this computer, apart from the suggestion step, which uses your own Claude Code login. To save prompts without suggestions, also add "GENAI_AUTO_CLASSIFY": "0". Full details: docs/PLUGIN.md.'));
+      return;
+    }
+    const c=data.counts;
+    box.append(el('p',{class:'chip ok capture-off'},'On'),
+      el('p',{},c.classified+' ready to review, '+(c.pending+c.classifying)+' waiting, '+c.failed+' could not be classified.'),
+      el('p',{class:'hint'},'Saved in '+data.path+'. Suggested answers are a starting point: open one, check every answer, then save a review. Nothing here counts as a reviewed use case until you do.'));
+    const actions=el('div',{class:'actions'});
+    if(c.pending+c.failed>0){
+      const run=button('Suggest answers now',async()=>{run.disabled=true;try{await api('/api/captured/classify',{});notice('Started. Reload in a minute to see the results.');}catch(e){notice(e.message,true);}run.disabled=false;});
+      actions.append(run);
+    }
+    if(data.items.length){
+      actions.append(button('Delete all captured prompts',async()=>{await api('/api/captured',null,'DELETE');draw();}));
+    }
+    box.append(actions);
+    if(!data.items.length){box.append(el('p',{class:'hint'},'Nothing captured yet. Send a prompt in Claude Code and it will appear here.'));return;}
+    const tbody=el('tbody');
+    data.items.forEach(i=>{
+      const st=CAPTURE_STATUS[i.status]||[i.status,'todo'];
+      tbody.append(el('tr',{},
+        el('td',{},el('strong',{},i.title),el('div',{class:'hint'},ago(i.timestamp))),
+        el('td',{},el('span',{class:'chip '+st[1]},st[0])),
+        el('td',{},i.assessment?badge(i.assessment.outcome):''),
+        el('td',{class:'row-actions'},
+          button(i.assessment?'Review':'Open',()=>newAssessment(i.example)),
+          button('Delete',async()=>{await api('/api/captured/'+encodeURIComponent(i.id),null,'DELETE');draw();}))));
+    });
+    box.append(el('table',{},el('thead',{},el('tr',{},['Prompt','Status','Suggested outcome',''].map(h=>el('th',{},h)))),tbody));
+  }
+  await draw();
 }
 async function recordDetail(id){
   const data=await api('/api/records/'+encodeURIComponent(id));

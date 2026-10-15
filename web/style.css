@@ -813,3 +813,12 @@ code{background:var(--paper);padding:1px 5px;border-radius:4px;font-size:12px}
 .chip.todo{background:#fbf1df;color:var(--amber)}
 button.link{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;font:inherit;font-size:inherit;cursor:pointer}
 @media(max-width:740px){.flow{grid-auto-flow:row}.flow li+li:before{display:none}}
+
+.capture{margin-top:20px}
+.capture table{width:100%;margin-top:12px}
+.row-actions{white-space:nowrap;text-align:right}
+.row-actions button{margin-left:6px;padding:6px 10px;font-size:11px}
+
+.capture-off{margin:14px 0 4px}
+.capture .flow{margin:14px 0}
+.capture h3{font-size:13px;margin:14px 0 8px}
