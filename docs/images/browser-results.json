@@ -1,6 +1,7 @@
 {
   "checks": [
     "Overview renders eight separated synthetic examples.",
+    "The AI suggestions pill opens an explanation of why it is off and how to turn it on.",
     "Manual review/save flow succeeds without a model or key.",
     "Revision workflow creates a second immutable assessment.",
     "CSV and JSON exports succeed and include all revisions.",

@@ -29,3 +29,10 @@ def test_bootstrap_serves_pairs_with_assessments(tmp_path):
     first = data['lookalikes'][0]
     assert first['a']['assessment']['outcome'] == 'Standard controls'
     assert first['b']['assessment']['outcome'] == 'Review required'
+
+
+def test_bootstrap_reports_benchmark_size(tmp_path):
+    from fastapi.testclient import TestClient
+    from app import create_app
+    data = TestClient(create_app(tmp_path / 'b.sqlite')).get('/api/bootstrap').json()
+    assert data['benchmark']['prompts'] >= data['benchmark']['scenarios'] > 0

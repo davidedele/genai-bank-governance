@@ -41,6 +41,15 @@ with sync_playwright() as p:
     assert page.locator('.sample').count() == 8
     page.screenshot(path=str(root / 'overview-desktop.png'), full_page=True)
     report['checks'].append('Overview renders eight separated synthetic examples.')
+    page.locator('#mode-label').click()
+    assert page.locator('dialog.modal').get_by_text('To turn it on').is_visible()
+    page.screenshot(path=str(root / 'ai-dialog.png'))
+    page.locator('.modal-close').click()
+    report['checks'].append('The AI suggestions pill opens an explanation of why it is off and how to turn it on.')
+    page.get_by_role('button', name='Register', exact=False).click()
+    page.get_by_text('Nothing saved yet').wait_for()
+    page.screenshot(path=str(root / 'register-empty.png'), full_page=True)
+    page.get_by_role('button', name='Overview', exact=False).click()
     page.locator('.sample').first.click()
     page.locator('#decision-panel h2').first.wait_for()
     assert page.locator('#decision-panel h2').first.inner_text() == 'Standard controls'
