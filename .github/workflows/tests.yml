@@ -14,3 +14,4 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements-dev.txt
       - run: pytest tests/ -v
+      - run: python scripts/check_package.py
