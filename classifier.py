@@ -20,6 +20,7 @@ import os
 from data.framework import DIMENSIONS, FORMS_OF_USE
 
 MODEL = "claude-haiku-4-5"
+MAX_DESCRIPTION_CHARS = 1500
 
 
 class ClassificationError(Exception):
@@ -72,6 +73,15 @@ def classify_use_case(description: str) -> dict:
     Raises ClassificationError if the API call fails or the model's
     response cannot be parsed into a valid classification.
     """
+    if not description or not description.strip():
+        raise ClassificationError("Description is empty.")
+    if len(description) > MAX_DESCRIPTION_CHARS:
+        raise ClassificationError(
+            f"Description is too long ({len(description)} characters, max "
+            f"{MAX_DESCRIPTION_CHARS}). This caps API cost per request and "
+            "keeps a single submission from pulling in unrelated pasted text."
+        )
+
     try:
         import anthropic
     except ImportError as e:

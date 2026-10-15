@@ -41,6 +41,18 @@ python eval/run_eval.py
 
 This runs the classifier against the 16 cases in `eval/cases.py` and writes a full per-dimension accuracy report to `eval/results.md`. None of the test cases describe a real bank or real client data, they were written for this project to test whether the classifier recovers the same dimension values a human reviewer would assign from a plain description.
 
+## Security notes
+
+This is a local script, not a hosted web app, so most of a typical web security checklist (authentication, user roles, database hardening, CORS) doesn't apply, there's no server, no accounts and no database. What does apply, and what this project actually does:
+
+- The API key is only ever read from an environment variable (`ANTHROPIC_API_KEY`), never hardcoded. `.env` is in `.gitignore` and was never committed; checked against the full git history, not just the latest commit.
+- The classifier's output is validated against a fixed allow-list of values before it's used for anything (`classifier._validate`). A free-text description that tried to manipulate the model into returning an arbitrary classification would just fail validation, not get accepted.
+- Free-text input is capped at 1,500 characters, both in the UI and server-side, to bound API cost per request.
+- Classifications are capped per session (30 by default) as a simple guard against runaway API spend if this is ever deployed somewhere other than your own machine.
+- Streamlit escapes rendered text by default; nothing in this app uses `unsafe_allow_html`, `eval`, `exec` or `pickle`.
+
+If you ever do deploy this somewhere public (Streamlit Community Cloud, for instance), the one thing worth adding before you do is a real rate limit tied to IP or an auth layer, not just the per-session counter above, since a new session resets it.
+
 ## Project structure
 
 ```

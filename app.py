@@ -19,7 +19,9 @@ import streamlit as st
 
 from data.framework import DIMENSIONS, FORMS_OF_USE, ILLUSTRATIVE_USE_CASES, RISK_AREAS
 from mapper import flagged_risk_ids, recommended_action, risk_areas_by_id
-from classifier import classify_use_case, ClassificationError
+from classifier import classify_use_case, ClassificationError, MAX_DESCRIPTION_CHARS
+
+MAX_CLASSIFICATIONS_PER_SESSION = 30
 
 st.set_page_config(page_title="GenAI Use-Case Register", layout="wide")
 
@@ -96,11 +98,28 @@ with tab_auto:
             "and asked it to recommend whether to approve the loan.\""
         ),
         height=100,
+        max_chars=MAX_DESCRIPTION_CHARS,
     )
 
-    classify_clicked = st.button("Classify and log", type="primary", disabled=not description)
+    if "classification_count" not in st.session_state:
+        st.session_state.classification_count = 0
+    budget_left = MAX_CLASSIFICATIONS_PER_SESSION - st.session_state.classification_count
+    st.caption(
+        f"{budget_left} of {MAX_CLASSIFICATIONS_PER_SESSION} classifications left this "
+        "session. A simple cap so one session can't run up an unbounded API bill, "
+        "relevant if this ever runs somewhere other than your own machine."
+    )
+
+    classify_clicked = st.button(
+        "Classify and log",
+        type="primary",
+        disabled=not description or budget_left <= 0,
+    )
+    if budget_left <= 0:
+        st.warning("Session classification limit reached. Restart the app to reset it.")
 
     if classify_clicked:
+        st.session_state.classification_count += 1
         with st.spinner("Classifying..."):
             try:
                 pred = classify_use_case(description)
