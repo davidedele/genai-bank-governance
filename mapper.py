@@ -91,7 +91,16 @@ def recommended_action(use_case: dict) -> str:
     regulated = process in REGULATED_PROCESS
     heavy_reliance = role in HEAVY_RELIANCE_OUTPUT or role == "Generated code deployed to an internal system"
 
-    if unapproved and (sensitive or regulated):
+    # Block is specifically for the thesis's own Table 4 scenario: sensitive
+    # data reaching a tool that isn't approved for it. "Regulated process"
+    # alone used to be enough to trigger this too, which meant anything
+    # touching a compliance-adjacent topic (summarizing a public press
+    # release about a rate decision, say) got blocked purely because the
+    # classifier defaults tool_access to "not approved" whenever a
+    # description doesn't name the tool, not because anything sensitive was
+    # actually at risk. Block now requires both: an unapproved tool AND
+    # information that's actually sensitive.
+    if unapproved and sensitive:
         return "Block recommended"
     if sensitive or (regulated and heavy_reliance):
         return "Flagged for review"

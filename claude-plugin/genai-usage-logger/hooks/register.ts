@@ -148,13 +148,28 @@ ${formsBlock}
 Dimensions (pick exactly one of the allowed values for each, copied verbatim):
 ${dimsBlock}
 
+Note on banking_process specifically: the test is whether the output feeds
+into or affects an actual compliance, regulatory, customer, or regulated-
+system outcome (a regulatory filing, an AML case, a credit committee
+decision, code deployed to a regulated financial system such as payments,
+a customer's account or interaction) rather than whether the subject matter
+merely sounds regulated. Reading or summarizing public information about a
+regulated topic for one's own general awareness, with no operational effect
+on any actual decision, system or customer, is "Internal administrative
+process," even when the topic itself (a new regulation, a rate decision) is
+regulatory in nature. The topic of the content is not the same as the
+process the employee's work actually affects.
+
 Employee's description of what they did:
 """${text.slice(0, MAX_TEXT_CHARS)}"""
 
 Classify this use case. Use only information stated or clearly implied by the
 description. If a dimension cannot be determined from the description, pick
 the most conservative (highest-risk) plausible value rather than guessing low,
-since under-classifying risk is worse than over-classifying it.
+since under-classifying risk is worse than over-classifying it. This
+conservative default does not override the banking_process note above: a
+genuinely internal, non-regulatory, non-customer-facing task stays "Internal
+administrative process" even under conservative defaulting.
 
 Respond with ONLY a JSON object, no other text, in exactly this shape:
 {
