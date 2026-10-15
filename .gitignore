@@ -6,7 +6,9 @@ venv/
 .env
 .env.*
 !.env.example
-eval/results/local-*
+.runtime/
+*.sqlite
+*.sqlite-*
 data/auto_log.jsonl
 *.patch
 *.bundle
@@ -14,3 +16,4 @@ data/auto_log.jsonl
 .pytest_cache/
 .coverage
 htmlcov/
+eval/results/local-*
