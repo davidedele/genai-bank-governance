@@ -211,17 +211,20 @@ function input(id,value='',max=160){
   }
   );
 }
-function selection(id,values,value){
-  const n=el('select',{
-    id
-  }
-  );
-  values.forEach(v=>n.append(el('option',{
-    value:v
-  }
-  ,v)));
-  n.value=value||boot.unknown;
-  return n;
+function choiceGroup(id,title,values,value,tip=''){
+  const group=el('fieldset',{class:'choice-group',id,title:tip},el('legend',{},title));
+  const row=el('div',{class:'choices'});
+  values.forEach(v=>{
+    const unknown=v===boot.unknown;
+    const input=el('input',{type:'radio',name:id,value:v,checked:(value||boot.unknown)===v});
+    row.append(el('label',{class:'choice'+(unknown?' choice-unknown':'')},input,el('span',{},unknown?'Not sure yet':v)));
+  });
+  group.append(row);
+  return group;
+}
+function choiceValue(id){
+  const c=document.querySelector('#'+id+' input:checked');
+  return c?c.value:boot.unknown;
 }
 function readForm(){
   if(!$('case-name'))return;
@@ -231,252 +234,126 @@ function readForm(){
   state.reviewer=$('reviewer').value;
   state.note=$('review-note').value;
   state.draft.forms=boot.forms.filter(f=>$('form-'+f.id).checked).map(f=>f.id);
-  boot.dimensions.forEach(d=>state.draft[d.id]=$(d.id).value);
-  state.draft.approval_status=$('approval-status').value;
+  boot.dimensions.forEach(d=>state.draft[d.id]=choiceValue(d.id));
+  state.draft.approval_status=choiceValue('approval-status');
+}
+function updateSaveState(){
+  const save=$('save-record');
+  if(!save)return;
+  readForm();
+  const missing=[];
+  if(!state.name.trim())missing.push('a name');
+  if(!state.owner.trim())missing.push('an owner');
+  if(!state.reviewer.trim())missing.push('a reviewer');
+  if(!$('confirm-review').checked)missing.push('your confirmation');
+  save.disabled=missing.length>0;
+  $('save-hint').textContent=missing.length?'To save, add '+missing.join(', ')+'.':'';
 }
 let assessmentTimer;
 async function refreshDecision(){
   readForm();
   const before=JSON.stringify(state.draft);
   try{
-    const result=await api('/api/assess',{
-      case:state.draft
-    }
-    );
+    const result=await api('/api/assess',{case:state.draft});
     if(currentPage==='assess'&&before===JSON.stringify(state.draft))renderDecision($('decision-panel'),result.assessment);
-  }
-  catch(e){
-    if($('decision-panel'))$('decision-panel').replaceChildren(el('div',{
-      class:'danger-note'
-    }
-    ,e.message));
+  }catch(e){
+    if($('decision-panel'))$('decision-panel').replaceChildren(el('div',{class:'danger-note'},e.message));
   }
 }
 function renderAssess(){
   state.draft=state.draft||blankCase();
   const root=$('assess');
-  root.replaceChildren(heading(state.parentId?'Review an existing use case':'Assess a use case','Use synthetic or appropriately authorized descriptions only. Review the characteristics before creating a record.'));
-  const grid=el('div',{
-    class:'assess-grid'
+  root.replaceChildren(heading(state.parentId?'Review an existing use case':'Assess a use case','Describe what happened, answer the questions, and the result updates as you go.'));
+  const grid=el('div',{class:'assess-grid'}),left=el('form',{id:'assessment-form'}),right=el('div',{id:'decision-panel'});
+
+  const extraction=panel(el('h2',{class:'panel-title'},'Describe the activity'),
+    field('Name',input('case-name',state.name)),
+    field('What did the employee do?',el('textarea',{id:'description',maxlength:1500,placeholder:'Which tool, what information, what task, and how the output was used or checked.'},state.description)));
+  const where=boot.live_enabled?boot.provider+(boot.model?' ('+boot.model+')':''):'';
+  if(boot.live_enabled){
+    const consent=el('label',{class:'checkbox'},el('input',{id:'external-consent',type:'checkbox'}),'Send this description to '+where+'.');
+    const classify=button('Suggest answers with AI',async()=>{
+      readForm();
+      if(!$('external-consent').checked){notice('Tick the box first to confirm the description may be sent to '+where+'.',true);return;}
+      classify.disabled=true;classify.textContent='Working...';
+      try{
+        const result=await api('/api/classify',{description:state.description,confirm_external_processing:true});
+        state.draft=result.case;state.classificationId=result.classification_id;
+        renderAssess();
+        notice('Suggestions filled in. Check every answer; a suggestion is not an approval.');
+      }catch(e){notice(e.message,true);}
+      finally{classify.disabled=false;classify.textContent='Suggest answers with AI';}
+    });
+    extraction.append(consent,classify);
+  }else{
+    extraction.append(el('p',{class:'hint'},'AI suggestions are off, so answer the questions yourself. Nothing you type leaves this computer.'));
   }
-  ),left=el('form',{
-    id:'assessment-form'
-  }
-  ),right=el('div',{
-    id:'decision-panel'
-  }
-  );
-  const extraction=panel(el('div',{
-    class:'panel-label'
-  }
-  ,'01 / DESCRIBE THE ACTIVITY'),field('Use-case name',input('case-name',state.name)),field('Activity description',el('textarea',{
-    id:'description',maxlength:1500,placeholder:'Describe the tool, information, task, output use and review arrangements.'
-  }
-  ,state.description),'No model receives this text unless you request extraction. Saving sends it to the local application; description retention is off by default.'));
-  const consent=el('label',{
-    class:'checkbox'
-  }
-  ,el('input',{
-    id:'external-consent',type:'checkbox'
-  }
-  ),'I authorize sending this description to the configured model provider.');
-  const classify=button('Extract with configured model',async()=>{
-    readForm();
-    if(!$('external-consent').checked){
-      notice('Confirm external processing before requesting classification.',true);
-      return;
-    }
-    classify.disabled=true;
-    classify.textContent='Extracting characteristics...';
-    try{
-      const result=await api('/api/classify',{
-        description:state.description,confirm_external_processing:true
-      }
-      );
-      state.draft=result.case;
-      state.classificationId=result.classification_id;
-      renderAssess();
-      notice('Extraction complete. Check each field; a model classification is not approval.');
-    }
-    catch(e){
-      notice(e.message,true);
-    }
-    finally{
-      classify.disabled=false;
-      classify.textContent='Extract with configured model';
-    }
-  }
-  );
-  classify.disabled=!boot.live_enabled;
-  extraction.append(consent,classify,el('p',{
-    class:'hint'
-  }
-  ,boot.live_enabled?'Provider: '+boot.provider+' / '+(boot.model||'model not configured'):'Live calls are off. The manual workflow works without a key or network access.'));
-  const characteristics=panel(el('div',{
-    class:'panel-label'
-  }
-  ,'02 / REVIEW THE CHARACTERISTICS'));
-  const forms=el('div',{
-    class:'forms-grid'
-  }
-  );
-  boot.forms.forEach(f=>forms.append(el('label',{
-    class:'checkbox'
-  }
-  ,el('input',{
-    type:'checkbox',id:'form-'+f.id,checked:state.draft.forms.includes(f.id)
-  }
-  ),f.name)));
-  characteristics.append(el('h3',{
-  }
-  ,'Forms of use'),forms,el('p',{
-    class:'hint'
-  }
-  ,'Select all that apply. An empty selection means the form is not established.'));
-  boot.dimensions.forEach(d=>characteristics.append(field(d.name,selection(d.id,[boot.unknown,...d.options],state.draft[d.id]),d.question)));
-  characteristics.append(field('Approval of this specific use',selection('approval-status',boot.approval_options,state.draft.approval_status),'Separate policy context, not a sixth thesis dimension. An enterprise licence does not establish approval of every use.'));
-  const savePanel=panel(el('div',{
-    class:'panel-label'
-  }
-  ,'03 / RECORD THE REVIEW'),field('Use-case owner',input('owner',state.owner,120)),field('Reviewed by',input('reviewer',state.reviewer,120),'Self-declared reviewer name. This local prototype does not authenticate identities.'),field('Review note',el('textarea',{
-    id:'review-note',maxlength:1000
-  }
-  ,state.note)),el('label',{
-    class:'checkbox'
-  }
-  ,el('input',{
-    type:'checkbox',id:'retain-description'
-  }
-  ),'Retain the activity description, model excerpts and rationale in the local database. Leave off to minimize stored text.'),el('p',{
-    class:'hint'
-  }
-  ,'Names and review notes are always stored. Do not put sensitive information in those fields.'),el('label',{
-    class:'checkbox'
-  }
-  ,el('input',{
-    type:'checkbox',id:'confirm-review'
-  }
-  ),'I reviewed these characteristics. Recording them does not authorize this use or resolve outstanding controls.'),el('button',{
-    type:'submit',class:'primary',id:'save-record'
-  }
-  ,state.parentId?'Save a new revision':'Save assessment'));
-  left.append(extraction,characteristics,savePanel);
-  grid.append(left,right);
-  root.append(grid);
+
+  const answers=panel(el('h2',{class:'panel-title'},'Check the answers'));
+  const forms=el('div',{class:'forms-grid'});
+  boot.forms.forEach(f=>forms.append(el('label',{class:'checkbox'},el('input',{type:'checkbox',id:'form-'+f.id,checked:state.draft.forms.includes(f.id)}),f.name)));
+  answers.append(el('fieldset',{class:'choice-group',title:'Select all that apply. Leave empty if you are not sure.'},el('legend',{},'Kind of use'),forms));
+  boot.dimensions.forEach(d=>answers.append(choiceGroup(d.id,d.name,[boot.unknown,...d.options],state.draft[d.id],d.question)));
+  answers.append(choiceGroup('approval-status','Approved for this use?',boot.approval_options,state.draft.approval_status,'An enterprise licence does not mean every use is approved.'));
+
+  const save=panel(el('h2',{class:'panel-title'},state.parentId?'Save a new revision':'Save your review'),
+    el('div',{class:'two-up'},field('Owner of this use case',input('owner',state.owner,120)),field('Reviewed by',input('reviewer',state.reviewer,120))),
+    field('Note (optional)',el('textarea',{id:'review-note',maxlength:1000,placeholder:'Anything the next reviewer should know.'},state.note)),
+    el('label',{class:'checkbox'},el('input',{type:'checkbox',id:'confirm-review'}),'I have checked these answers. Saving does not approve this use.'),
+    el('details',{class:'storage'},el('summary',{},'Storage options'),
+      el('label',{class:'checkbox'},el('input',{type:'checkbox',id:'retain-description'}),'Also keep the description text in the local database. Off by default.'),
+      el('p',{class:'hint'},'Names and notes are always stored. Keep sensitive details out of them.')),
+    el('div',{class:'save-row'},el('button',{type:'submit',class:'primary',id:'save-record'},state.parentId?'Save revision':'Save review'),el('span',{id:'save-hint',class:'hint'})));
+
+  left.append(extraction,answers,save);
+  grid.append(left,right);root.append(grid);
+  left.addEventListener('input',updateSaveState);
   left.addEventListener('change',()=>{
-    readForm();
+    updateSaveState();
     clearTimeout(assessmentTimer);
     assessmentTimer=setTimeout(refreshDecision,120);
-  }
-  );
+  });
   left.addEventListener('submit',async event=>{
-    event.preventDefault();
-    readForm();
-    const save=$('save-record');
-    save.disabled=true;
+    event.preventDefault();readForm();
+    const btn=$('save-record');btn.disabled=true;
     try{
-      const record=await api('/api/records',{
-        name:state.name,owner:state.owner,reviewer:state.reviewer,case:state.draft,classification_id:state.classificationId,description:state.description,retain_description:$('retain-description').checked,parent_id:state.parentId,review_note:state.note,confirm_review:$('confirm-review').checked
-      }
-      );
-      state.parentId=record.id;
-      show('register');
-      notice('Assessment saved as revision '+record.revision+'. The outcome and policy snapshot are preserved.');
-    }
-    catch(e){
-      notice(e.message,true);
-      save.disabled=false;
-    }
-  }
-  );
+      const record=await api('/api/records',{name:state.name,owner:state.owner,reviewer:state.reviewer,case:state.draft,classification_id:state.classificationId,description:state.description,retain_description:$('retain-description').checked,parent_id:state.parentId,review_note:state.note,confirm_review:$('confirm-review').checked});
+      state.parentId=record.id;show('register');
+      notice('Saved as revision '+record.revision+'. The result and the policy version are kept with it.');
+    }catch(e){notice(e.message,true);updateSaveState();}
+  });
+  updateSaveState();
   refreshDecision();
 }
 function renderDecision(root,a){
   root.replaceChildren();
-  const outcome=panel(el('div',{
-    class:'panel-label'
+  const total=boot.dimensions.length+2;
+  if(a.unresolved.length>=total){
+    root.append(el('div',{class:'panel outcome-empty'},el('h2',{},'Your result will appear here'),el('p',{class:'quiet'},'Answer the questions on the left. Anything you are not sure about can stay as "Not sure yet", and the result will tell you what is still missing.')));
+    return;
   }
-  ,'ILLUSTRATIVE TRIAGE'),badge(a.outcome),el('h2',{
-  }
-  ,a.outcome),el('p',{
-    class:'quiet'
-  }
-  ,'This is a review outcome, not a risk score or automatic authorization.'));
+  const outcome=panel(el('h2',{},a.outcome),el('p',{class:'quiet'},'What kind of review is needed under the sample policy. It is not a score or an approval.'));
   outcome.classList.add('outcome');
   const c=actionClass(a.outcome);
   if(c)outcome.classList.add(c);
-  for(const hit of a.rule_hits)outcome.append(el('div',{
-    class:'reason'
-  }
-  ,el('code',{
-  }
-  ,hit.id),hit.reason));
-  if(a.unresolved.length)outcome.append(el('div',{
-    class:'unknown-box'
-  }
-  ,el('strong',{
-  }
-  ,'Clarification still required'),el('br'),a.unresolved.map(id=>boot.dimensions.find(d=>d.id===id)?.name||(id==='forms'?'Forms of use':'Use approval')).join('; ')));
-  for(const n of a.notes)outcome.append(el('p',{
-    class:'quiet'
-  }
-  ,n));
-  outcome.append(el('div',{
-    class:'mini-metrics'
-  }
-  ,el('span',{
-  }
-  ,el('strong',{
-  }
-  ,a.risk_ids.length),'risk areas'),el('span',{
-  }
-  ,el('strong',{
-  }
-  ,a.unresolved.length),'unresolved fields')),el('div',{
-    class:'hint'
-  }
-  ,'Policy '+a.policy_version));
-  root.append(outcome,el('h2',{
-  }
-  ,'Controls and responsibilities'));
-  for(const id of a.risk_ids){
-    const r=(a.risk_details||boot.risks).find(x=>x.id===id);
-    const details=el('details',{
+  for(const hit of a.rule_hits)outcome.append(el('div',{class:'reason'},hit.reason));
+  if(a.unresolved.length)outcome.append(el('div',{class:'unknown-box'},el('strong',{},'Still to answer: '),a.unresolved.map(id=>boot.dimensions.find(d=>d.id===id)?.name||(id==='forms'?'Kind of use':'Approved for this use?')).join(', ')));
+  for(const n of a.notes)outcome.append(el('p',{class:'quiet'},n));
+  outcome.append(el('div',{class:'hint',title:'The version of the sample policy used for this result.'},'Sample policy '+a.policy_version));
+  root.append(outcome);
+  if(a.risk_ids.length){
+    root.append(el('h2',{class:'side-title'},a.risk_ids.length===1?'1 risk to manage':a.risk_ids.length+' risks to manage'));
+    for(const id of a.risk_ids){
+      const r=(a.risk_details||boot.risks).find(x=>x.id===id);
+      root.append(el('details',{},el('summary',{},r.name),el('div',{class:'details-body'},
+        el('p',{},el('strong',{},'Why it applies: '),a.risk_reasons[id]),
+        el('p',{},el('strong',{},'Goal: '),r.control_objective),
+        el('ul',{},r.illustrative_controls.map(s=>el('li',{},s))),
+        el('p',{},el('strong',{},'Who is responsible: '),r.responsible_parties),
+        el('p',{},el('strong',{},'What remains uncovered: '),r.remaining_limitation))));
     }
-    ,el('summary',{
-    }
-    ,r.name),el('div',{
-      class:'details-body'
-    }
-    ,el('p',{
-    }
-    ,el('strong',{
-    }
-    ,'Why it applies: '),a.risk_reasons[id]),el('p',{
-    }
-    ,el('strong',{
-    }
-    ,'Objective: '),r.control_objective),el('ul',{
-    }
-    ,r.illustrative_controls.map(s=>el('li',{
-    }
-    ,s))),el('p',{
-    }
-    ,el('strong',{
-    }
-    ,'Responsible parties: '),r.responsible_parties),el('p',{
-    }
-    ,el('strong',{
-    }
-    ,'Remaining limitation: '),r.remaining_limitation)));
-    root.append(details);
   }
-  root.append(panel(el('h3',{
-  }
-  ,'Baseline controls still apply'),...a.baseline_controls.map(t=>el('p',{
-    class:'quiet'
-  }
-  ,t))));
+  root.append(el('p',{class:'quiet baseline'},'Baseline controls always apply: '+a.baseline_controls.join(' ')));
 }
 async function renderRegister(){
   const root=$('register');
