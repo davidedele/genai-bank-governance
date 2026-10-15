@@ -208,7 +208,7 @@ with tab_register:
                 "Logged at": entry.get("logged_at", "—"),
                 "Source": entry.get("source", "manual"),
                 "Use case": entry["name"],
-                "Form of use": FORM_BY_ID[entry["form"]]["name"],
+                "Form of use": FORM_BY_ID.get(entry["form"], {"name": "Unknown"})["name"],
                 "Action": recommended_action(entry),
                 "Risk areas flagged": ", ".join(RISK_BY_ID[r]["name"] for r in flagged) or "None",
                 "Tool and access": entry["tool_access"],

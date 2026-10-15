@@ -40,7 +40,8 @@ The classifier is intentionally conservative: when a description doesn't make a 
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # pick LLM_PROVIDER and add that provider's API key
+pip install -r requirements-llm.txt   # only needed for live classification
+cp .env.example .env   # set ENABLE_LIVE_CLASSIFICATION=1, LLM_PROVIDER, LLM_MODEL and that provider's API key
 export $(cat .env | xargs)
 streamlit run app.py
 ```
@@ -49,16 +50,16 @@ The Register, Add manually and The framework tabs work without an API key. Auto-
 
 ### Choosing a model provider
 
-The classifier isn't tied to one vendor. `providers.py` supports four, selected by `LLM_PROVIDER` in `.env` (default `anthropic`):
+The classifier isn't tied to one vendor. `providers.py` supports four, selected by `LLM_PROVIDER` in `.env` (default `anthropic`). Live classification is off unless `ENABLE_LIVE_CLASSIFICATION=1`, and it requires `LLM_MODEL` to name an exact model available in your account:
 
-| `LLM_PROVIDER` | Model used (default) | Key variable | Get a key |
-|---|---|---|---|
-| `anthropic` | `claude-haiku-4-5` | `ANTHROPIC_API_KEY` | console.anthropic.com/settings/keys |
-| `openai` | `gpt-4o-mini` | `OPENAI_API_KEY` | platform.openai.com/api-keys |
-| `grok` | `grok-2-latest` | `XAI_API_KEY` | console.x.ai |
-| `gemini` | `gemini-2.0-flash` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+| `LLM_PROVIDER` | Key variable | Get a key |
+|---|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` | console.anthropic.com/settings/keys |
+| `openai` | `OPENAI_API_KEY` | platform.openai.com/api-keys |
+| `grok` | `XAI_API_KEY` | console.x.ai |
+| `gemini` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
 
-Set `LLM_MODEL` in `.env` to override the default model for whichever provider you picked, without touching code. OpenAI, Grok and Gemini all go through the `openai` Python package (Grok and Gemini each publish an OpenAI-compatible endpoint, so `providers.py` just points the same client at a different `base_url`); Anthropic goes through its own SDK. The Auto-classify tab shows which provider and model are active.
+Set `LLM_MODEL` in `.env` to the model you want to use; no default model is assumed. OpenAI, Grok and Gemini all go through the `openai` Python package (Grok and Gemini each publish an OpenAI-compatible endpoint, so `providers.py` just points the same client at a different `base_url`); Anthropic goes through its own SDK. The Auto-classify tab shows which provider and model are active.
 
 ## Evaluating the classifier
 

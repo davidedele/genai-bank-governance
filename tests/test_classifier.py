@@ -1,110 +1,67 @@
-"""
-Tests for classifier.py's JSON-extraction, validation, and error handling.
-
-No test here makes a real API call (no key is assumed to be configured).
-`providers.complete` is monkeypatched to return canned text, which is
-enough to exercise classify_use_case/_build_prompt/_validate directly.
-This parsing/validation layer, not the network call itself, is the part
-most likely to break when switching providers.
-"""
-
 import json
-
 import pytest
-
+from classifier import parse_classification, ClassificationError, classify_use_case, _validate, build_system_prompt
+from schema import UNKNOWN, normalize_case, ValidationError
+from providers import Completion
 import classifier
-from classifier import (
-    ClassificationError,
-    _extract_json_object,
-    _validate,
-    classify_use_case,
-)
+from demo_examples import BASE
+DESCRIPTION = 'An approved enterprise assistant summarized public material for routine internal administration. I reviewed the draft within my expertise.'
+VALID = {**BASE, 'rationale': 'Description-based extraction.', 'evidence': {k: DESCRIPTION for k in BASE if k != 'forms'}}
 
-VALID = {
-    "form": "communication",
-    "tool_access": "Enterprise tool",
-    "information_involved": "Internal, non-sensitive information",
-    "role_of_output": "Initial draft, reviewed and revised by the employee",
-    "banking_process": "Internal administrative process",
-    "task_expertise": "Routine, within the employee's expertise",
-    "rationale": "Routine internal drafting with an approved tool.",
-}
+@pytest.mark.parametrize('raw', [None, [], False, 1, 'x', {'forms': [{}]}, {**BASE, 'tool_access': []}])
+def test_malformed_schema_fails_cleanly(raw):
+    with pytest.raises((ClassificationError, ValidationError)):
+        _validate(raw)
 
+def test_valid_extraction():
+    assert parse_classification(json.dumps(VALID), DESCRIPTION)['forms'] == ['document_processing']
 
-def test_validate_accepts_well_formed_classification():
-    _validate(VALID)  # should not raise
+def test_code_fence_is_accepted():
+    assert parse_classification('```json\n' + json.dumps(VALID) + '\n```', DESCRIPTION)['forms']
 
-
-def test_validate_rejects_unknown_form():
-    bad = dict(VALID, form="not_a_real_form")
+@pytest.mark.parametrize('suffix', ['Here is your answer.', '{"forms":[]}'])
+def test_trailing_prose_or_second_object_is_rejected(suffix):
     with pytest.raises(ClassificationError):
-        _validate(bad)
+        parse_classification(json.dumps(VALID) + suffix, DESCRIPTION)
 
-
-def test_validate_rejects_unknown_dimension_value():
-    bad = dict(VALID, banking_process="Something made up")
+def test_duplicate_keys_rejected():
     with pytest.raises(ClassificationError):
-        _validate(bad)
+        parse_classification('{"forms":[],"forms":[]}', DESCRIPTION)
 
-
-def test_extract_json_object_handles_bare_json():
-    raw = json.dumps(VALID)
-    assert json.loads(_extract_json_object(raw)) == VALID
-
-
-def test_extract_json_object_handles_code_fence():
-    raw = "```json\n" + json.dumps(VALID) + "\n```"
-    assert json.loads(_extract_json_object(raw)) == VALID
-
-
-def test_extract_json_object_handles_trailing_commentary():
-    # Some providers (GPT-4o-mini observed to do this) add a sentence after
-    # the JSON object despite being asked for only JSON.
-    raw = json.dumps(VALID) + "\n\nLet me know if you need anything else!"
-    assert json.loads(_extract_json_object(raw)) == VALID
-
-
-def test_extract_json_object_ignores_braces_inside_strings():
-    # A rationale that itself contains literal braces (e.g. quoting a code
-    # snippet) must not be mistaken for the end of the JSON object.
-    tricky = dict(VALID, rationale='Looks like {"a": "b"} in the paste.')
-    raw = json.dumps(tricky) + " (end)"
-    assert json.loads(_extract_json_object(raw)) == tricky
-
-
-def test_classify_use_case_rejects_empty_description():
+def test_evidence_must_occur_in_input():
+    bad = {**VALID, 'evidence': {**VALID['evidence'], 'tool_access': 'Never said this'}}
     with pytest.raises(ClassificationError):
-        classify_use_case("   ")
+        parse_classification(json.dumps(bad), DESCRIPTION)
 
-
-def test_classify_use_case_rejects_overlong_description():
+def test_known_values_require_evidence():
     with pytest.raises(ClassificationError):
-        classify_use_case("x" * (classifier.MAX_DESCRIPTION_CHARS + 1))
+        parse_classification(json.dumps({**VALID, 'evidence': {}}), DESCRIPTION)
 
+def test_unknown_values_need_no_invented_evidence():
+    raw = {d: UNKNOWN for d in classifier.DIMENSION_IDS}
+    raw.update(forms=[], approval_status=UNKNOWN, evidence={}, rationale='Insufficient context.')
+    assert parse_classification(json.dumps(raw), 'Help me.')['tool_access'] == UNKNOWN
 
-def test_classify_use_case_happy_path(monkeypatch):
-    monkeypatch.setattr(classifier, "complete", lambda prompt, max_tokens=400: json.dumps(VALID))
-    result = classify_use_case("Drafted an internal memo with an approved enterprise tool.")
-    assert result == VALID
+def test_multiple_forms():
+    raw = {**VALID, 'forms': ['communication', 'document_processing']}
+    assert len(parse_classification(json.dumps(raw), DESCRIPTION)['forms']) == 2
 
+def test_approval_contradiction():
+    with pytest.raises(ValidationError):
+        normalize_case({**BASE, 'tool_access': 'Public service, not approved for this task'})
 
-def test_classify_use_case_handles_fenced_and_commented_reply(monkeypatch):
-    raw = "```json\n" + json.dumps(VALID) + "\n```\nHope that helps!"
-    monkeypatch.setattr(classifier, "complete", lambda prompt, max_tokens=400: raw)
-    result = classify_use_case("Drafted an internal memo with an approved enterprise tool.")
-    assert result == VALID
-
-
-def test_classify_use_case_wraps_provider_error(monkeypatch):
-    def _boom(prompt, max_tokens=400):
-        raise classifier.ProviderError("simulated outage")
-
-    monkeypatch.setattr(classifier, "complete", _boom)
+@pytest.mark.parametrize('description', ['', '   ', None, 'a' * 1501])
+def test_invalid_input_never_calls_provider(description, monkeypatch):
+    monkeypatch.setattr(classifier, 'complete_with_metadata', lambda *a, **k: pytest.fail('Provider should not run'))
     with pytest.raises(ClassificationError):
-        classify_use_case("Drafted an internal memo.")
+        classify_use_case(description)
 
+def test_provider_metadata_and_parser(monkeypatch):
+    monkeypatch.setattr(classifier, 'complete_with_metadata', lambda *a, **k: Completion(json.dumps(VALID), 'test', 'fixed-model', 'fixed-model', 50, 50))
+    case, meta = classifier.classify_with_metadata(DESCRIPTION)
+    assert case['tool_access'] == BASE['tool_access']
+    assert meta['prompt_sha256'] and meta['requested_model'] == 'fixed-model'
 
-def test_classify_use_case_rejects_unparseable_reply(monkeypatch):
-    monkeypatch.setattr(classifier, "complete", lambda prompt, max_tokens=400: "not json at all")
-    with pytest.raises(ClassificationError):
-        classify_use_case("Drafted an internal memo.")
+def test_prompt_separates_unknown_from_risk_and_approval():
+    text = build_system_prompt()
+    assert 'untrusted data' in text and 'Do not infer approval' in text and (UNKNOWN in text)

@@ -1,171 +1,124 @@
-"""
-Provider-agnostic LLM calling for classifier.py.
-
-The classifier only needs one thing from a model: send a prompt, get back
-text. Anthropic, OpenAI, xAI (Grok) and Google (Gemini) all expose that
-same shape, and three of the four (OpenAI, Grok, Gemini) speak OpenAI's own
-wire format, either natively or through a published "OpenAI-compatible"
-endpoint. So instead of a separate branch of request/response code per
-company, this module keeps exactly two code paths: Anthropic's own SDK, and
-the OpenAI SDK pointed at whichever base_url the chosen provider uses.
-Adding another OpenAI-compatible provider later (e.g. a local vLLM server,
-DeepSeek, Mistral's API) means adding one entry to PROVIDERS, not a new
-branch.
-
-Which provider is used is controlled by two environment variables:
-
-    LLM_PROVIDER   one of PROVIDERS below. Defaults to "anthropic".
-    LLM_MODEL      overrides that provider's default model name. Optional,
-                   since model names change far more often than providers.
-
-See .env.example for the API-key variable each provider reads.
-"""
-
+"""Optional provider clients. One retry layer, bounded timeouts, no error-body leakage."""
+from dataclasses import dataclass, asdict
 import os
 import time
-
-# How many times to retry a single completion call after a transient failure
-# (timeout, rate limit, connection reset), and how long to wait between
-# attempts. A bad API key or missing package fails the same way every time,
-# so complete() below only retries once the first attempt has actually
-# reached the provider and failed there, not for setup errors it already
-# caught before calling the SDK.
+from typing import Callable, TypeVar
 MAX_ATTEMPTS = 3
-RETRY_BACKOFF_SECONDS = 1.5
+RETRY_BACKOFF_SECONDS = 0.5
+REQUEST_TIMEOUT_SECONDS = 25.0
+PROVIDERS = {'anthropic': {'label': 'Anthropic', 'sdk': 'anthropic', 'api_key_env': 'ANTHROPIC_API_KEY', 'base_url': None}, 'openai': {'label': 'OpenAI', 'sdk': 'openai', 'api_key_env': 'OPENAI_API_KEY', 'base_url': None}, 'grok': {'label': 'xAI', 'sdk': 'openai', 'api_key_env': 'XAI_API_KEY', 'base_url': 'https://api.x.ai/v1'}, 'gemini': {'label': 'Google Gemini', 'sdk': 'openai', 'api_key_env': 'GEMINI_API_KEY', 'base_url': 'https://generativelanguage.googleapis.com/v1beta/openai/'}}
 
-PROVIDERS = {
-    "anthropic": {
-        "label": "Anthropic (Claude)",
-        "sdk": "anthropic",
-        "api_key_env": "ANTHROPIC_API_KEY",
-        "base_url": None,
-        "default_model": "claude-haiku-4-5",
-        "key_url": "https://console.anthropic.com/settings/keys",
-    },
-    "openai": {
-        "label": "OpenAI (GPT)",
-        "sdk": "openai",
-        "api_key_env": "OPENAI_API_KEY",
-        "base_url": None,  # OpenAI SDK's own default
-        "default_model": "gpt-4o-mini",
-        "key_url": "https://platform.openai.com/api-keys",
-    },
-    "grok": {
-        "label": "xAI (Grok)",
-        "sdk": "openai",  # xAI publishes an OpenAI-compatible endpoint
-        "api_key_env": "XAI_API_KEY",
-        "base_url": "https://api.x.ai/v1",
-        "default_model": "grok-2-latest",
-        "key_url": "https://console.x.ai",
-    },
-    "gemini": {
-        "label": "Google (Gemini)",
-        "sdk": "openai",  # Gemini also publishes an OpenAI-compatible endpoint
-        "api_key_env": "GEMINI_API_KEY",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "default_model": "gemini-2.0-flash",
-        "key_url": "https://aistudio.google.com/apikey",
-    },
-}
-
-
-class ProviderError(Exception):
+class ProviderError(RuntimeError):
     pass
 
+@dataclass
+class Completion:
+    text: str
+    provider: str
+    requested_model: str
+    response_model: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    attempts: int = 1
+    elapsed_seconds: float = 0.0
+    max_output_tokens: int = 1600
+
+    def metadata(self):
+        data = asdict(self)
+        del data['text']
+        data['request_timeout_seconds'] = REQUEST_TIMEOUT_SECONDS
+        data['sampling'] = 'provider defaults'
+        return data
 
 def current_provider_id() -> str:
-    provider = os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
-    if provider not in PROVIDERS:
-        raise ProviderError(
-            f"Unknown LLM_PROVIDER {provider!r}. Choose one of: "
-            + ", ".join(PROVIDERS)
-        )
-    return provider
-
+    value = os.environ.get('LLM_PROVIDER', 'anthropic').strip().lower()
+    if value not in PROVIDERS:
+        raise ProviderError('LLM_PROVIDER must be anthropic, openai, grok or gemini.')
+    return value
 
 def current_model(provider_id: str) -> str:
-    return os.environ.get("LLM_MODEL") or PROVIDERS[provider_id]["default_model"]
+    if provider_id not in PROVIDERS:
+        raise ProviderError('Unknown provider.')
+    model = os.environ.get('LLM_MODEL', '').strip()
+    if not model or len(model) > 200:
+        raise ProviderError('Set LLM_MODEL to a model identifier available in your provider account.')
+    return model
 
+def _is_transient(error: Exception) -> bool:
+    status = getattr(error, 'status_code', None)
+    if isinstance(status, int):
+        return status in (408, 409, 429) or 500 <= status <= 599
+    return isinstance(error, (TimeoutError, ConnectionError)) or type(error).__name__ in {'APITimeoutError', 'APIConnectionError', 'ReadTimeout', 'ConnectTimeout', 'ConnectError'}
+T = TypeVar('T')
 
-def complete(prompt: str, max_tokens: int = 400) -> str:
-    """Send a single-turn prompt to whichever provider LLM_PROVIDER selects
-    and return the raw text of the reply. Raises ProviderError for any
-    configuration or request problem, with a message naming the provider
-    actually in use, since that's no longer always Anthropic."""
-    provider_id = current_provider_id()
-    provider = PROVIDERS[provider_id]
-    model = current_model(provider_id)
-
-    api_key = os.environ.get(provider["api_key_env"])
-    if not api_key:
-        raise ProviderError(
-            f"{provider['api_key_env']} is not set. LLM_PROVIDER is "
-            f"{provider_id!r} ({provider['label']}), which reads its key "
-            f"from that variable. Get one at {provider['key_url']}, add it "
-            "to .env, and load it (e.g. `export $(cat .env | xargs)`) "
-            "before running."
-        )
-
-    if provider["sdk"] == "anthropic":
-        try:
-            import anthropic
-        except ImportError as e:
-            raise ProviderError(
-                "The 'anthropic' package is not installed. Run: "
-                "pip install anthropic"
-            ) from e
-
-        def _call_anthropic():
-            client = anthropic.Anthropic(api_key=api_key)
-            response = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return response.content[0].text.strip()
-
-        return _with_retries(_call_anthropic, provider["label"], model)
-
-    # Everything else (OpenAI itself, and OpenAI-compatible providers like
-    # Grok and Gemini) goes through the same openai.OpenAI client, just
-    # pointed at a different base_url.
-    try:
-        import openai
-    except ImportError as e:
-        raise ProviderError(
-            "The 'openai' package is not installed. Run: pip install openai"
-        ) from e
-
-    def _call_openai_compatible():
-        client = openai.OpenAI(api_key=api_key, base_url=provider["base_url"])
-        response = client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.choices[0].message.content.strip()
-
-    return _with_retries(_call_openai_compatible, provider["label"], model)
-
-
-def _with_retries(call, provider_label: str, model: str) -> str:
-    """Run `call()` up to MAX_ATTEMPTS times, pausing between failures.
-
-    A single flaky request (timeout, rate limit, dropped connection) would
-    otherwise permanently fail one classification. Retrying here, where the
-    actual network call happens, covers every caller at once.
-    """
-    last_error: Exception | None = None
+def _with_retries(call: Callable[[], T], provider_label: str, model: str) -> T:
+    started = time.monotonic()
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            return call()
-        except Exception as e:  # noqa: BLE001 - deliberately broad: SDKs
-            # raise their own distinct exception types per provider, and all
-            # of them are worth one retry before giving up.
-            last_error = e
-            if attempt < MAX_ATTEMPTS:
-                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
-    raise ProviderError(
-        f"{provider_label} API call failed (model {model!r}) after "
-        f"{MAX_ATTEMPTS} attempts: {last_error}"
-    ) from last_error
+            value = call()
+            if isinstance(value, Completion):
+                value.attempts = attempt
+                value.elapsed_seconds = round(time.monotonic() - started, 4)
+            return value
+        except Exception as error:
+            if not _is_transient(error) or attempt == MAX_ATTEMPTS:
+                code = getattr(error, 'status_code', None)
+                suffix = f' (HTTP {code})' if isinstance(code, int) else ''
+                raise ProviderError(f'{provider_label} request failed{suffix} after {attempt} attempt(s). Check configuration or provider availability.') from None
+            delay = RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1)
+            headers = getattr(getattr(error, 'response', None), 'headers', {})
+            try:
+                retry_after = float(headers.get('retry-after', 0))
+                if retry_after > 10:
+                    raise ProviderError('Provider requested a longer retry delay; retry the operation later.') from None
+                delay = max(delay, retry_after)
+            except (ValueError, TypeError):
+                pass
+            time.sleep(delay)
+    raise ProviderError('Request failed.')
+
+def complete_with_metadata(prompt: str, max_tokens: int=1600, *, system: str='') -> Completion:
+    if os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') != '1':
+        raise ProviderError('Live classification is disabled. Enable it explicitly in your local configuration.')
+    pid = current_provider_id()
+    cfg = PROVIDERS[pid]
+    model = current_model(pid)
+    key = os.environ.get(cfg['api_key_env'], '').strip()
+    if not key or key.endswith('...'):
+        raise ProviderError(f"Set {cfg['api_key_env']} in your local environment.")
+    if cfg['sdk'] == 'anthropic':
+        try:
+            import anthropic
+        except ImportError:
+            raise ProviderError('Install requirements-llm.txt to enable this provider.') from None
+
+        def call():
+            with anthropic.Anthropic(api_key=key, timeout=REQUEST_TIMEOUT_SECONDS, max_retries=0) as client:
+                result = client.messages.create(model=model, system=system, max_tokens=max_tokens, messages=[{'role': 'user', 'content': prompt}])
+            text = ''.join((b.text for b in result.content if getattr(b, 'type', None) == 'text')).strip()
+            if not text or getattr(result, 'stop_reason', None) == 'max_tokens':
+                raise ProviderError('Empty or truncated model response.')
+            return Completion(text, pid, model, getattr(result, 'model', None), getattr(result.usage, 'input_tokens', None), getattr(result.usage, 'output_tokens', None))
+    else:
+        try:
+            import openai
+        except ImportError:
+            raise ProviderError('Install requirements-llm.txt to enable this provider.') from None
+
+        def call():
+            with openai.OpenAI(api_key=key, base_url=cfg['base_url'], timeout=REQUEST_TIMEOUT_SECONDS, max_retries=0) as client:
+                token_limit = {'max_completion_tokens' if pid == 'openai' else 'max_tokens': max_tokens}
+                result = client.chat.completions.create(model=model, **token_limit, messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}])
+            if not result.choices or result.choices[0].finish_reason == 'length':
+                raise ProviderError('Empty or truncated model response.')
+            text = result.choices[0].message.content
+            if not isinstance(text, str) or not text.strip():
+                raise ProviderError('Model returned no classification text.')
+            usage = result.usage
+            return Completion(text.strip(), pid, model, getattr(result, 'model', None), getattr(usage, 'prompt_tokens', None), getattr(usage, 'completion_tokens', None))
+    completion = _with_retries(call, cfg['label'], model)
+    completion.max_output_tokens = max_tokens
+    return completion
+
+def complete(prompt: str, max_tokens: int=1600, *, system: str='') -> str:
+    return complete_with_metadata(prompt, max_tokens, system=system).text
