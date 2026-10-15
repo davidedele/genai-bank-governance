@@ -1,0 +1,215 @@
+From e85e258e3f5680e4c7486d328db119e6ebc43a32 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 15 Oct 2026 17:56:44 +0200
+Subject: [PATCH] Add shared log for an auto-logging Claude Code plugin
+
+app.py's Register tab now reads data/auto_log.jsonl (via the new
+auto_log.py) and merges in "classified" entries, tagged
+claude-code-auto, with a Refresh button to re-pull the file on demand.
+
+This is the other half of genai-usage-logger, a Claude Code plugin
+(hooks module, not part of this repo) that watches every prompt in a
+session, logs it as pending, and classifies pending entries on its own
+timer against the same five dimensions and validation rules as
+classifier.py, duplicated there since the plugin's sandboxed
+environment can't import this project's Python. The goal is to match
+the thesis's "enterprise AI gateway" framing: nobody fills in a form,
+the log is read automatically from what an employee actually typed.
+
+data/auto_log.jsonl is gitignored since it holds raw prompt text before
+classification.
+---
+ .gitignore  |  1 +
+ README.md   | 16 +++++++++++++
+ app.py      | 36 ++++++++++++++++++++++++++++
+ auto_log.py | 67 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 120 insertions(+)
+ create mode 100644 auto_log.py
+
+diff --git a/.gitignore b/.gitignore
+index 28e615c..1e9803a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -5,3 +5,4 @@ venv/
+ .DS_Store
+ .env
+ eval/results.md
++data/auto_log.jsonl
+diff --git a/README.md b/README.md
+index 1c069d9..57d4919 100644
+--- a/README.md
++++ b/README.md
+@@ -68,6 +68,19 @@ python eval/run_eval.py
+ 
+ This runs the classifier against the 16 cases in `eval/cases.py` and writes a full per-dimension accuracy report to `eval/results.md`. None of the test cases describe a real bank or real client data, they were written for this project to test whether the classifier recovers the same dimension values a human reviewer would assign from a plain description.
+ 
++## Auto-logging a Claude Code session
++
++The Streamlit app's Auto-classify tab still needs someone to type a description. `genai-usage-logger` is a small Claude Code plugin (a "mod": a `hooks` module, not Python) that does what the thesis's "enterprise AI gateway" framing actually implies: it watches every prompt in a Claude Code session, logs it, and classifies it against the same five dimensions on its own timer, with nobody filling anything in.
++
++It works in two stages:
++
++1. On every prompt submitted in the session, it appends the raw text to `data/auto_log.jsonl` as `"pending"`, and lets the prompt through immediately, so it never adds latency to a turn.
++2. A background timer (every 20 seconds) scans that file for `"pending"` entries, classifies each with one model call (the exact same prompt and validation rules as `classifier.py`, duplicated in the mod since its sandboxed environment can't import this project's Python), and writes the result back as `"classified"` or `"failed"`.
++
++`auto_log.py` reads that same file from the Python side and `app.py`'s Register tab merges in every `"classified"` entry, tagged `source: claude-code-auto`, alongside manual and Auto-classify entries. A `🔄 Refresh` button in that tab re-reads the file on demand, since the mod writes to it independently of the Streamlit process.
++
++The mod's own files live outside this repository (Claude Code plugins are not part of a project's own source tree), under the plugin name `genai-usage-logger`. `data/auto_log.jsonl` is gitignored: it accumulates raw prompt text before classification, which can be exactly the kind of confidential or client information the thesis's framework is meant to flag, so it should never be committed.
++
+ ## Security notes
+ 
+ This is a local script, not a hosted web app, so most of a typical web security checklist (authentication, user roles, database hardening, CORS) doesn't apply, there's no server, no accounts and no database. What does apply, and what this project actually does:
+@@ -77,6 +90,7 @@ This is a local script, not a hosted web app, so most of a typical web security
+ - Free-text input is capped at 1,500 characters, both in the UI and server-side, to bound API cost per request.
+ - Classifications are capped per session (30 by default) as a simple guard against runaway API spend if this is ever deployed somewhere other than your own machine.
+ - Streamlit escapes rendered text by default; nothing in this app uses `unsafe_allow_html`, `eval`, `exec` or `pickle`.
++- `data/auto_log.jsonl`, written by the genai-usage-logger mod described above, holds raw prompt text before it's classified. It's gitignored and only ever read by `auto_log.py` on this machine; nothing sends it anywhere else.
+ 
+ If you ever do deploy this somewhere public (Streamlit Community Cloud, for instance), the one thing worth adding before you do is a real rate limit tied to IP or an auth layer, not just the per-session counter above, since a new session resets it.
+ 
+@@ -90,6 +104,8 @@ providers.py           picks and calls the model provider (Anthropic, OpenAI, Gr
+ eval/cases.py         16 hand-labeled synthetic use cases
+ eval/run_eval.py      runs the classifier against eval/cases.py and reports accuracy
+ app.py                 the Streamlit app
++auto_log.py            reads data/auto_log.jsonl (written by the genai-usage-logger Claude Code mod) into register-shaped entries
++data/auto_log.jsonl   gitignored; raw and classified prompts the mod has logged, if any
+ ```
+ 
+ ## A note on how this was built
+diff --git a/app.py b/app.py
+index a401469..26855b2 100644
+--- a/app.py
++++ b/app.py
+@@ -23,6 +23,7 @@ from data.framework import DIMENSIONS, FORMS_OF_USE, ILLUSTRATIVE_USE_CASES, RIS
+ from mapper import flagged_risk_ids, recommended_action, risk_areas_by_id
+ from classifier import classify_use_case, ClassificationError, MAX_DESCRIPTION_CHARS
+ from providers import PROVIDERS, current_provider_id, current_model, ProviderError
++from auto_log import read_classified_entries
+ 
+ MAX_CLASSIFICATIONS_PER_SESSION = 30
+ 
+@@ -45,6 +46,27 @@ if "register" not in st.session_state:
+         {**dict(uc), "source": "thesis example (Table 4)", "logged_at": "—"}
+         for uc in ILLUSTRATIVE_USE_CASES
+     ]
++    # Entries already classified by genai-usage-logger (the Claude Code mod
++    # that auto-logs every prompt in a session) before this app even started.
++    st.session_state.auto_log_seen_ids = set()
++
++
++def sync_auto_log():
++    """Pull in any newly classified entries from the shared auto-log file.
++
++    Called on every render, not just once, since the genai-usage-logger mod
++    writes to that file on its own timer, independent of this app. Dedup is
++    by the mod's own entry id, since Streamlit reruns this whole script on
++    every interaction and would otherwise re-append the same rows forever.
++    """
++    for entry in read_classified_entries():
++        if entry["id"] in st.session_state.auto_log_seen_ids:
++            continue
++        st.session_state.auto_log_seen_ids.add(entry["id"])
++        st.session_state.register.append({k: v for k, v in entry.items() if k != "id"})
++
++
++sync_auto_log()
+ 
+ 
+ def render_risk_panel(use_case: dict):
+@@ -196,6 +218,20 @@ with tab_register:
+         "the illustrative examples from the thesis itself (Table 4)."
+     )
+ 
++    auto_col, refresh_col = st.columns([5, 1])
++    with auto_col:
++        st.caption(
++            "Rows marked **claude-code-auto** were logged by the genai-usage-logger "
++            "Claude Code plugin, which watches a session's prompts and classifies "
++            "them on its own timer, not by anyone typing into Auto-classify. It "
++            "writes to `data/auto_log.jsonl`; this tab re-reads that file on every "
++            "refresh, which is why a new auto-logged entry may need one click here "
++            "to appear."
++        )
++    with refresh_col:
++        if st.button("🔄 Refresh"):
++            st.rerun()
++
+     # Re-run the mapper over every entry on each page load, rather than
+     # storing the flagged risks and action at the time an entry was added.
+     # That way an edit to mapper.py's rules is reflected immediately for
+diff --git a/auto_log.py b/auto_log.py
+new file mode 100644
+index 0000000..ab2111c
+--- /dev/null
++++ b/auto_log.py
+@@ -0,0 +1,67 @@
++"""
++Reads the shared auto-classification log that the genai-usage-logger Claude
++Code plugin/mod writes to.
++
++That mod is a separate piece entirely, written as a hooks module (not
++Python), that watches every prompt in a Claude Code session, logs it as
++"pending", and periodically classifies pending entries against the same
++five dimensions classifier.py uses, duplicated there since the mod's
++environment cannot import this project's own code. This module is the
++other half of that link: it reads the JSON-lines file the mod writes to
++and turns "classified" entries into the same dict shape app.py's register
++expects, so they show up in the Register tab without the employee typing
++anything into Auto-classify themselves, the way a real usage log sitting
++behind an enterprise AI gateway would need to work.
++
++The file is line-delimited JSON (one entry per line) rather than a single
++JSON array so the mod can append without re-parsing the whole file, and so
++a reader here is tolerant of a line being mid-write: a line that fails to
++parse is skipped rather than failing the whole read.
++"""
++
++import json
++from pathlib import Path
++
++DEFAULT_LOG_PATH = Path(__file__).resolve().parent / "data" / "auto_log.jsonl"
++
++
++def read_classified_entries(path: Path = DEFAULT_LOG_PATH) -> list[dict]:
++    """Return every "classified" entry in the log, as register-shaped dicts.
++
++    "pending" entries (not yet classified) and "failed" ones (the model's
++    reply didn't validate) are left out: the Register tab should only ever
++    show entries that actually carry all five dimensions.
++    """
++    if not path.exists():
++        return []
++
++    entries = []
++    for line in path.read_text(encoding="utf-8").splitlines():
++        line = line.strip()
++        if not line:
++            continue
++        try:
++            raw = json.loads(line)
++        except json.JSONDecodeError:
++            # Can happen if this read races the mod's own write; the next
++            # scan interval will have a complete line to read instead.
++            continue
++
++        if raw.get("status") != "classified":
++            continue
++
++        entries.append(
++            {
++                "id": raw.get("id"),
++                "name": raw.get("name", raw.get("text", "")[:80]),
++                "form": raw.get("form"),
++                "tool_access": raw.get("tool_access"),
++                "information_involved": raw.get("information_involved"),
++                "role_of_output": raw.get("role_of_output"),
++                "banking_process": raw.get("banking_process"),
++                "task_expertise": raw.get("task_expertise"),
++                "source": "claude-code-auto",
++                "logged_at": raw.get("classifiedAt", raw.get("loggedAt", "—")),
++            }
++        )
++    return entries
+-- 
+2.43.0
+

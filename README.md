@@ -68,6 +68,19 @@ python eval/run_eval.py
 
 This runs the classifier against the 16 cases in `eval/cases.py` and writes a full per-dimension accuracy report to `eval/results.md`. None of the test cases describe a real bank or real client data, they were written for this project to test whether the classifier recovers the same dimension values a human reviewer would assign from a plain description.
 
+## Auto-logging a Claude Code session
+
+The Streamlit app's Auto-classify tab still needs someone to type a description. `genai-usage-logger` is a small Claude Code plugin (a "mod": a `hooks` module, not Python) that does what the thesis's "enterprise AI gateway" framing actually implies: it watches every prompt in a Claude Code session, logs it, and classifies it against the same five dimensions on its own timer, with nobody filling anything in.
+
+It works in two stages:
+
+1. On every prompt submitted in the session, it appends the raw text to `data/auto_log.jsonl` as `"pending"`, and lets the prompt through immediately, so it never adds latency to a turn.
+2. A background timer (every 20 seconds) scans that file for `"pending"` entries, classifies each with one model call (the exact same prompt and validation rules as `classifier.py`, duplicated in the mod since its sandboxed environment can't import this project's Python), and writes the result back as `"classified"` or `"failed"`.
+
+`auto_log.py` reads that same file from the Python side and `app.py`'s Register tab merges in every `"classified"` entry, tagged `source: claude-code-auto`, alongside manual and Auto-classify entries. A `🔄 Refresh` button in that tab re-reads the file on demand, since the mod writes to it independently of the Streamlit process.
+
+The mod's own files live outside this repository (Claude Code plugins are not part of a project's own source tree), under the plugin name `genai-usage-logger`. `data/auto_log.jsonl` is gitignored: it accumulates raw prompt text before classification, which can be exactly the kind of confidential or client information the thesis's framework is meant to flag, so it should never be committed.
+
 ## Security notes
 
 This is a local script, not a hosted web app, so most of a typical web security checklist (authentication, user roles, database hardening, CORS) doesn't apply, there's no server, no accounts and no database. What does apply, and what this project actually does:
@@ -77,6 +90,7 @@ This is a local script, not a hosted web app, so most of a typical web security 
 - Free-text input is capped at 1,500 characters, both in the UI and server-side, to bound API cost per request.
 - Classifications are capped per session (30 by default) as a simple guard against runaway API spend if this is ever deployed somewhere other than your own machine.
 - Streamlit escapes rendered text by default; nothing in this app uses `unsafe_allow_html`, `eval`, `exec` or `pickle`.
+- `data/auto_log.jsonl`, written by the genai-usage-logger mod described above, holds raw prompt text before it's classified. It's gitignored and only ever read by `auto_log.py` on this machine; nothing sends it anywhere else.
 
 If you ever do deploy this somewhere public (Streamlit Community Cloud, for instance), the one thing worth adding before you do is a real rate limit tied to IP or an auth layer, not just the per-session counter above, since a new session resets it.
 
@@ -90,6 +104,8 @@ providers.py           picks and calls the model provider (Anthropic, OpenAI, Gr
 eval/cases.py         16 hand-labeled synthetic use cases
 eval/run_eval.py      runs the classifier against eval/cases.py and reports accuracy
 app.py                 the Streamlit app
+auto_log.py            reads data/auto_log.jsonl (written by the genai-usage-logger Claude Code mod) into register-shaped entries
+data/auto_log.jsonl   gitignored; raw and classified prompts the mod has logged, if any
 ```
 
 ## A note on how this was built

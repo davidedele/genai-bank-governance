@@ -1,0 +1,6 @@
+{
+  "name": "genai-usage-logger",
+  "version": "0.1.0",
+  "description": "Captures every prompt in this session and auto-classifies it into the genai-bank-governance use-case register, the way a real enterprise AI gateway's usage log would.",
+  "author": { "name": "Davide Delegeanu" }
+}

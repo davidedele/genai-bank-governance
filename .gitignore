@@ -5,3 +5,4 @@ venv/
 .DS_Store
 .env
 eval/results.md
+data/auto_log.jsonl

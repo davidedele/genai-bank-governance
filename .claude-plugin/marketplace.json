@@ -1,0 +1,10 @@
+{
+  "name": "genai-bank-governance",
+  "owner": { "name": "Davide Delegeanu" },
+  "plugins": [
+    {
+      "name": "genai-usage-logger",
+      "source": "./claude-plugin/genai-usage-logger"
+    }
+  ]
+}
