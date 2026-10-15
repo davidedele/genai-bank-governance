@@ -253,7 +253,7 @@ RISK_AREAS = [
     },
 ]
 
-# Table 4: illustrative risk-mechanism examples, usable as preloaded register entries
+# Synthetic software examples inspired by Table 4; populated category values are not verbatim thesis findings.
 ILLUSTRATIVE_USE_CASES = [
     {
         "name": "Entering confidential or proprietary information into a public tool",
@@ -265,7 +265,7 @@ ILLUSTRATIVE_USE_CASES = [
         "task_expertise": "Routine, within the employee's expertise",
     },
     {
-        "name": "Using AI output to support an assessment outside the tool's capabilities",
+        "name": "Using AI output for an assessment the employee cannot independently evaluate",
         "form": "analytical",
         "tool_access": "Enterprise tool",
         "information_involved": "Internal, non-sensitive information",
@@ -294,7 +294,8 @@ ILLUSTRATIVE_USE_CASES = [
     {
         "name": "Using an approved tool for a purpose not considered when it was approved",
         "form": "analytical",
-        "tool_access": "Public service, approved for this task",
+        "tool_access": "Enterprise tool",
+        "approval_status": "Not approved for this use",
         "information_involved": "Personal or client data",
         "role_of_output": "Recommendation used to support a decision",
         "banking_process": "Process involving customers",

@@ -11,7 +11,7 @@ This project does two things the thesis itself doesn't. It turns the framework i
 ## What it does
 
 - **Auto-classify.** Describe a use case in your own words (e.g. "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan"). An LLM classifies it against the thesis's five dimensions, the app maps that to the relevant risk areas and a recommended action (Logged, Flagged for review, or Block recommended), and logs the entry automatically with a timestamp.
-- **Register.** A running log of every use case, manual or auto-classified, pre-loaded with the six illustrative examples from the thesis (Table 4). Exportable as CSV.
+- **Register.** A running log of every use case, manual or auto-classified, pre-loaded with six synthetic examples inspired by the thesis's Table 4. Exportable as CSV.
 - **Add manually.** The original form-based entry: pick the form of use and a value for each dimension directly.
 - **Classifier accuracy.** Points at `eval/`, where the classifier is tested against 16 hand-written, synthetic, labeled use cases, with per-dimension accuracy reported.
 - **The framework.** The underlying tables from the thesis (four forms of use, five dimensions, the full nine-area risk-to-control comparison) laid out for reference.
@@ -22,7 +22,7 @@ Once `streamlit run app.py` opens the app in your browser, there are five tabs a
 
 **Auto-classify** is the main one. Type a plain-language description of something a bank employee did with a generative AI tool, for example "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan," and click Classify and log. You'll get back five tiles (one per dimension the thesis defines), the model's one-line reasoning, and a panel below showing every risk area that applies, each with its control objective, suggested controls, who'd typically be responsible, and the thesis's own stated limitation of that control. At the top of that panel is an Action badge: green "Logged" for routine, low-risk activity, orange "Flagged for review" for something a bank's compliance or risk team would want to look at, red "Block recommended" for a combination (like confidential client data going to an unapproved public tool) that a policy would typically stop outright. Every classification, successful or not, counts against a session limit shown just above the button, there to cap how many paid API calls one sitting can rack up; it resets if you restart the app.
 
-**Register** is the running log, every use case you've added, by hand or through Auto-classify, in one table, downloadable as a CSV. It starts pre-loaded with six example use cases pulled straight from the thesis itself (Table 4), so there's always something to look at even before you add your own.
+**Register** is the running log, every use case you've added, by hand or through Auto-classify, in one table, downloadable as a CSV. It starts pre-loaded with six synthetic example use cases inspired by the thesis's Table 4 (their category values are illustrations, not findings from the thesis), so there's always something to look at even before you add your own.
 
 **Add manually** is the same risk and control analysis, but you build the use case yourself from dropdowns instead of typing a description, useful for testing a specific combination directly, or if you don't want to use an API key at all for that part.
 

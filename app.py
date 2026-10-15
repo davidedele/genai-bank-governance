@@ -42,7 +42,7 @@ def now() -> str:
 # a real deployment would need to persist the register somewhere durable.
 if "register" not in st.session_state:
     st.session_state.register = [
-        {**dict(uc), "source": "thesis example (Table 4)", "logged_at": "—"}
+        {**dict(uc), "source": "synthetic example (inspired by Table 4)", "logged_at": "—"}
         for uc in ILLUSTRATIVE_USE_CASES
     ]
 
@@ -193,7 +193,7 @@ with tab_register:
     st.write(
         "Every entry, however it was logged, is scored against the same five "
         "dimensions and the same risk-to-control table. The first six rows are "
-        "the illustrative examples from the thesis itself (Table 4)."
+        "synthetic examples inspired by the thesis's Table 4, not findings."
     )
 
     # Re-run the mapper over every entry on each page load, rather than
