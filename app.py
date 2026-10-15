@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from data.framework import DIMENSIONS, FORMS_OF_USE, RISK_AREAS
 from schema import APP_VERSION, UNKNOWN, APPROVAL_OPTIONS, ValidationError, normalize_case
 from mapper import assess_use_case, load_policy
-from storage import Store, ConflictError, export_csv
+from storage import Store, ConflictError, export_csv, daily_limit_from_env
 from classifier import classify_with_metadata, ClassificationError
 from providers import current_model, current_provider_id, ProviderError
 from demo_examples import examples
@@ -101,7 +101,7 @@ def create_app(db_path: Path | None=None):
             model = current_model(provider)
         except ProviderError:
             pass
-        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'live_enabled': live, 'provider': provider, 'model': model}
+        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'live_enabled': live, 'provider': provider, 'model': model, 'daily_limit': daily_limit_from_env()}
 
     @application.post('/api/assess')
     def assess(body: AssessRequest):
@@ -114,7 +114,7 @@ def create_app(db_path: Path | None=None):
         if os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') != '1':
             raise HTTPException(403, 'Live classification is disabled in local configuration.')
         try:
-            store.reserve_api_attempt()
+            store.reserve_api_attempt(daily_limit_from_env())
             case, meta = classify_with_metadata(body.description)
         except (ClassificationError, ValueError) as e:
             raise HTTPException(400, str(e)) from None

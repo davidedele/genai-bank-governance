@@ -97,15 +97,27 @@ class Store:
             return json.loads(row[0]) if row else None
 
     def reserve_api_attempt(self, limit: int=30) -> int:
+        """Count one model extraction for today (UTC). A limit of 0 turns the cap off."""
         name = 'classify:' + utc_now()[:10]
         with self.connect() as c:
             c.execute('BEGIN IMMEDIATE')
             c.execute('INSERT OR IGNORE INTO counters VALUES(?,0)', (name,))
             n = c.execute('SELECT value FROM counters WHERE name=?', (name,)).fetchone()[0]
-            if n >= limit:
-                raise ValueError('Daily live-classification attempt limit reached.')
+            if limit > 0 and n >= limit:
+                raise ValueError(f'Daily limit of {limit} model extractions reached. Try again tomorrow (UTC), or raise DAILY_CLASSIFICATION_LIMIT in .env.')
             c.execute('UPDATE counters SET value=value+1 WHERE name=?', (name,))
-            return limit - n - 1
+            return limit - n - 1 if limit > 0 else -1
+
+def daily_limit_from_env(environ=None) -> int:
+    """DAILY_CLASSIFICATION_LIMIT: a whole number, 0 for no cap. Anything else falls back to 30."""
+    raw = (environ if environ is not None else os.environ).get('DAILY_CLASSIFICATION_LIMIT', '').strip()
+    if not raw:
+        return 30
+    try:
+        value = int(raw)
+    except ValueError:
+        return 30
+    return value if value >= 0 else 30
 
 def safe_csv_cell(value) -> str:
     text = str(value if value is not None else '')

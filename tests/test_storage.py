@@ -3,7 +3,7 @@ import io
 import json
 from concurrent.futures import ThreadPoolExecutor
 import pytest
-from storage import Store, ConflictError, export_csv, safe_csv_cell
+from storage import Store, ConflictError, export_csv, safe_csv_cell, daily_limit_from_env
 from demo_examples import BASE
 from mapper import load_policy
 
@@ -78,3 +78,18 @@ def test_corrections_and_field_sources_preserved_without_stale_evidence(store):
     assert a['case']['rationale'] == ''
     assert a['original_prediction']['evidence']['information_involved'] == 'public report'
     assert a['field_sources']['information_involved'] == 'reviewer correction'
+
+
+def test_daily_limit_zero_means_no_cap(store):
+    for _ in range(5):
+        assert store.reserve_api_attempt(limit=0) == -1
+
+def test_daily_limit_message_names_the_setting(store):
+    store.reserve_api_attempt(limit=1)
+    with pytest.raises(ValueError, match='DAILY_CLASSIFICATION_LIMIT'):
+        store.reserve_api_attempt(limit=1)
+
+@pytest.mark.parametrize('value,expected', [(None, 30), ('', 30), ('12', 12), (' 7 ', 7), ('0', 0), ('-3', 30), ('many', 30), ('2.5', 30)])
+def test_daily_limit_from_environment(value, expected):
+    environ = {} if value is None else {'DAILY_CLASSIFICATION_LIMIT': value}
+    assert daily_limit_from_env(environ) == expected
