@@ -1,330 +1,182 @@
-"""
-GenAI Use-Case Register for Banks
-----------------------------------
-A working prototype of the "use-case register" proposed in Section 5.2 of
-the thesis this project is based on, extended with an automatic classifier
-(classifier.py) that reads a plain-language description of what an
-employee did and infers the five comparison dimensions itself, the same way
-a real usage log behind an LLM gateway would need to. Every entry, manual
-or automatic, is run through the same risk-to-control mapping drawn from
-the thesis's Chapter 5. The classifier is not tied to one model vendor;
-providers.py dispatches the actual API call to Anthropic, OpenAI, xAI
-(Grok) or Google (Gemini) depending on the LLM_PROVIDER setting in .env.
+"""Local research workspace. Start with: python app.py"""
+import json
+import os
+import secrets
+import time
+from pathlib import Path
+from threading import Lock
+from urllib.parse import urlparse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from data.framework import DIMENSIONS, FORMS_OF_USE, RISK_AREAS
+from schema import APP_VERSION, UNKNOWN, APPROVAL_OPTIONS, ValidationError, normalize_case
+from mapper import assess_use_case, load_policy
+from storage import Store, ConflictError, export_csv
+from classifier import classify_with_metadata, ClassificationError
+from providers import current_model, current_provider_id, ProviderError
+from demo_examples import examples
+from auto_log import read_metadata_events
+ROOT = Path(__file__).resolve().parent
 
-Run locally with: streamlit run app.py
-"""
+class AssessRequest(BaseModel):
+    case: dict
 
-from datetime import datetime, timezone
+class ClassifyRequest(BaseModel):
+    description: str = Field(min_length=1, max_length=1500)
+    confirm_external_processing: bool = False
 
-import pandas as pd
-import streamlit as st
+class SaveRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    owner: str = Field(min_length=1, max_length=120)
+    reviewer: str = Field(min_length=1, max_length=120)
+    case: dict
+    classification_id: str | None = None
+    description: str = Field(default='', max_length=1500)
+    retain_description: bool = False
+    parent_id: str | None = None
+    review_note: str = Field(default='', max_length=1000)
+    confirm_review: bool = False
 
-from data.framework import DIMENSIONS, FORMS_OF_USE, ILLUSTRATIVE_USE_CASES, RISK_AREAS
-from mapper import flagged_risk_ids, recommended_action, risk_areas_by_id
-from classifier import classify_use_case, ClassificationError, MAX_DESCRIPTION_CHARS
-from providers import PROVIDERS, current_provider_id, current_model, ProviderError
+def create_app(db_path: Path | None=None):
+    application = FastAPI(title='GenAI Governance Workspace', version=APP_VERSION, docs_url=None, redoc_url=None)
+    store = Store(db_path or Path(os.environ.get('GOVERNANCE_DB_PATH', ROOT / '.runtime' / 'register.sqlite')))
+    token = secrets.token_urlsafe(32)
+    # Pending extraction provenance stays server-side and is never accepted from a client.
+    pending = {}
+    pending_lock = Lock()
 
-MAX_CLASSIFICATIONS_PER_SESSION = 30
+    def prune_pending():
+        now = time.monotonic()
+        for key in list(pending):
+            if now - pending[key]['created'] > 1200:
+                del pending[key]
+    application.state.store = store
+    application.state.token = token
+    application.mount('/static', StaticFiles(directory=ROOT / 'web'), name='static')
 
-st.set_page_config(page_title="GenAI Use-Case Register", layout="wide")
-
-RISK_BY_ID = risk_areas_by_id()
-FORM_BY_ID = {f["id"]: f for f in FORMS_OF_USE}
-
-
-def now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
-# st.session_state persists for one browser tab's session, not across restarts
-# or between different users, so the register and the classification count
-# below both reset whenever the app process restarts. That's fine for a demo;
-# a real deployment would need to persist the register somewhere durable.
-if "register" not in st.session_state:
-    st.session_state.register = [
-        {**dict(uc), "source": "synthetic example (inspired by Table 4)", "logged_at": "—"}
-        for uc in ILLUSTRATIVE_USE_CASES
-    ]
-
-
-def render_risk_panel(use_case: dict):
-    """Shared by the Auto-classify and Add manually tabs: both end up with a
-    dict of the same five dimension values, just from a different source
-    (the LLM vs. the radio buttons), so both can reuse this exact same
-    risk-area and action rendering."""
-    flagged = flagged_risk_ids(use_case)
-    action = recommended_action(use_case)
-
-    # Streamlit's markdown color syntax, :color[text], just styles the badge;
-    # the actual logic deciding Logged/Flagged/Block lives in mapper.py.
-    action_color = {"Standard controls": "green", "Clarification required": "blue", "Review required": "orange", "Do not proceed": "red"}.get(action, "gray")
-    st.markdown(f"**Action:** :{action_color}[{action}]")
-
-    if not flagged:
-        st.info(
-            "No risk area from the thesis's framework is flagged for this "
-            "combination. That does not mean the use case is risk-free, only "
-            "that it does not trip the illustrative thresholds this prototype "
-            "checks."
-        )
-        return
-
-    for rid in flagged:
-        risk = RISK_BY_ID[rid]
-        with st.expander(risk["name"], expanded=True):
-            st.markdown(f"**Mechanism.** {risk['mechanism']}")
-            st.markdown(f"**Control objective.** {risk['control_objective']}")
-            st.markdown("**Illustrative controls.**")
-            for c in risk["illustrative_controls"]:
-                st.markdown(f"- {c}")
-            st.markdown(f"**Main responsible parties.** {risk['responsible_parties']}")
-            st.markdown(f"**Remaining limitation.** {risk['remaining_limitation']}")
-
-
-st.title("GenAI Use-Case Register for Banks")
-st.caption(
-    "Built on the use-case register proposed in Section 5.2 of "
-    "“The Use of Generative Artificial Intelligence in Banks: Governance, "
-    "Risks, and Internal Controls,” a Bachelor's thesis at Bocconi University, "
-    "with an automatic classifier added on top of the thesis's own framework."
-)
-
-tab_auto, tab_register, tab_manual, tab_eval, tab_framework = st.tabs(
-    ["Auto-classify", "Register", "Add manually", "Classifier accuracy", "The framework"]
-)
-
-with tab_auto:
-    st.subheader("Describe what you did, in your own words")
-    st.write(
-        "This is the part of the project that goes beyond the thesis: instead "
-        "of picking the five dimensions from a form, you describe the activity "
-        "the way an employee actually would, and an LLM classifies it against "
-        "the thesis's own framework, logs it, and flags it if it crosses a "
-        "risk threshold. The same way an LLM gateway in front of a bank's "
-        "approved AI tools would need to."
-    )
-
-    description = st.text_area(
-        "What did you do?",
-        placeholder=(
-            "e.g. \"I pasted a client's loan file into ChatGPT's public website "
-            "and asked it to recommend whether to approve the loan.\""
-        ),
-        height=100,
-        max_chars=MAX_DESCRIPTION_CHARS,
-    )
-
-    try:
-        _provider_id = current_provider_id()
-        st.caption(
-            f"Using **{PROVIDERS[_provider_id]['label']}** "
-            f"(model `{current_model(_provider_id)}`), set via `LLM_PROVIDER` "
-            "in `.env`. Other supported providers: "
-            + ", ".join(p["label"] for pid, p in PROVIDERS.items() if pid != _provider_id)
-            + "."
-        )
-    except ProviderError as e:
-        st.caption(f"⚠️ {e}")
-
-    if "classification_count" not in st.session_state:
-        st.session_state.classification_count = 0
-    budget_left = MAX_CLASSIFICATIONS_PER_SESSION - st.session_state.classification_count
-    st.caption(
-        f"{budget_left} of {MAX_CLASSIFICATIONS_PER_SESSION} classifications left this "
-        "session. A simple cap so one session can't run up an unbounded API bill, "
-        "relevant if this ever runs somewhere other than your own machine."
-    )
-
-    classify_clicked = st.button(
-        "Classify and log",
-        type="primary",
-        disabled=not description or budget_left <= 0,
-    )
-    if budget_left <= 0:
-        st.warning("Session classification limit reached. Restart the app to reset it.")
-
-    if classify_clicked:
-        # Counted even if the call below fails, intentionally: the API call
-        # already happened and was already billed, so the budget should
-        # reflect attempts, not just successes.
-        st.session_state.classification_count += 1
-        with st.spinner("Classifying..."):
+    @application.middleware('http')
+    async def boundary(request: Request, call_next):
+        host = request.headers.get('host', '')
+        hostname = urlparse('http://' + host).hostname
+        if hostname not in {'localhost', '127.0.0.1', '::1', 'testserver'}:
+            return JSONResponse({'detail': 'This workspace accepts local hosts only.'}, status_code=403)
+        origin = request.headers.get('origin')
+        if origin and origin != f'{request.url.scheme}://{host}':
+            return JSONResponse({'detail': 'Cross-origin requests are not accepted.'}, status_code=403)
+        if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            supplied = request.headers.get('x-workspace-token', '')
+            if not secrets.compare_digest(supplied, token):
+                return JSONResponse({'detail': 'Reload the workspace before submitting.'}, status_code=403)
             try:
-                pred = classify_use_case(description)
-            except ClassificationError as e:
-                st.error(str(e))
-                pred = None
+                length = int(request.headers.get('content-length', '0'))
+            except ValueError:
+                return JSONResponse({'detail': 'Invalid content length.'}, status_code=400)
+            if length < 0:
+                return JSONResponse({'detail': 'Invalid content length.'}, status_code=400)
+            if length > 64000:
+                return JSONResponse({'detail': 'Request exceeds the local input limit.'}, status_code=413)
+        response = await call_next(request)
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
-        if pred:
-            st.success("Classified and logged.")
-            # One metric tile per dimension, in the same order classifier.py
-            # asks the model for them.
-            cols = st.columns(5)
-            labels = {
-                "tool_access": "Tool and access",
-                "information_involved": "Information involved",
-                "role_of_output": "Role of output",
-                "banking_process": "Banking process",
-                "task_expertise": "Task and expertise",
-            }
-            for col, (key, label) in zip(cols, labels.items()):
-                with col:
-                    st.metric(label, pred[key])
-            st.caption(f"Model's rationale: {pred.get('rationale', '—')}")
+    @application.exception_handler(ValidationError)
+    async def invalid_case(request, error):
+        return JSONResponse({'detail': str(error)}, status_code=422)
 
-            st.divider()
-            render_risk_panel(pred)
+    @application.get('/', response_class=HTMLResponse)
+    def home():
+        return (ROOT / 'web/index.html').read_text()
 
-            entry = {
-                "name": description[:80],
-                "form": pred["form"],
-                "tool_access": pred["tool_access"],
-                "information_involved": pred["information_involved"],
-                "role_of_output": pred["role_of_output"],
-                "banking_process": pred["banking_process"],
-                "task_expertise": pred["task_expertise"],
-                "source": "auto-classified",
-                "logged_at": now(),
-            }
-            st.session_state.register.append(entry)
+    @application.get('/api/bootstrap')
+    def bootstrap():
+        live = os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') == '1'
+        provider = model = None
+        try:
+            provider = current_provider_id()
+            model = current_model(provider)
+        except ProviderError:
+            pass
+        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'live_enabled': live, 'provider': provider, 'model': model}
 
-with tab_register:
-    st.subheader("Use-case register")
-    st.write(
-        "Every entry, however it was logged, is scored against the same five "
-        "dimensions and the same risk-to-control table. The first six rows are "
-        "synthetic examples inspired by the thesis's Table 4, not findings."
-    )
+    @application.post('/api/assess')
+    def assess(body: AssessRequest):
+        return {'case': normalize_case(body.case), 'assessment': assess_use_case(body.case)}
 
-    # Re-run the mapper over every entry on each page load, rather than
-    # storing the flagged risks and action at the time an entry was added.
-    # That way an edit to mapper.py's rules is reflected immediately for
-    # every past entry too, not just new ones.
-    rows = []
-    for entry in st.session_state.register:
-        flagged = flagged_risk_ids(entry)
-        rows.append(
-            {
-                "Logged at": entry.get("logged_at", "—"),
-                "Source": entry.get("source", "manual"),
-                "Use case": entry["name"],
-                "Form of use": FORM_BY_ID.get(entry["form"], {"name": "Unknown"})["name"],
-                "Action": recommended_action(entry),
-                "Risk areas flagged": ", ".join(RISK_BY_ID[r]["name"] for r in flagged) or "None",
-                "Tool and access": entry["tool_access"],
-                "Information involved": entry["information_involved"],
-                "Role of output": entry["role_of_output"],
-                "Banking process": entry["banking_process"],
-                "Task and expertise": entry["task_expertise"],
-            }
-        )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    @application.post('/api/classify')
+    def classify(body: ClassifyRequest):
+        if not body.confirm_external_processing:
+            raise HTTPException(400, 'Explicit confirmation of external processing is required.')
+        if os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') != '1':
+            raise HTTPException(403, 'Live classification is disabled in local configuration.')
+        try:
+            store.reserve_api_attempt()
+            case, meta = classify_with_metadata(body.description)
+        except (ClassificationError, ValueError) as e:
+            raise HTTPException(400, str(e)) from None
+        with pending_lock:
+            prune_pending()
+            if len(pending) >= 100:
+                pending.pop(next(iter(pending)))
+            key = secrets.token_urlsafe(20)
+            pending[key] = {'case': case, 'metadata': meta, 'description': body.description, 'created': time.monotonic()}
+        return {'classification_id': key, 'case': case, 'metadata': meta, 'assessment': assess_use_case(case)}
 
-    csv = pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
-    st.download_button("Download register as CSV", csv, "use_case_register.csv", "text/csv")
+    @application.post('/api/records')
+    def save(body: SaveRequest):
+        if not body.confirm_review:
+            raise HTTPException(400, 'Confirm that you reviewed the recorded characteristics.')
+        original = None
+        provenance = {'source': 'manual'}
+        if body.classification_id:
+            with pending_lock:
+                prune_pending()
+                original = pending.get(body.classification_id)
+            if not original:
+                raise HTTPException(409, 'Classification expired. Classify again or save as a manual entry.')
+            if body.description != original['description']:
+                raise HTTPException(409, 'The description changed after classification. Classify again before saving.')
+            provenance = {'source': 'model extraction, human reviewed', **original['metadata']}
+        try:
+            record = store.save(name=body.name, owner=body.owner, reviewer=body.reviewer, case=body.case, prediction=original['case'] if original else None, provenance=provenance, description=body.description, retain_description=body.retain_description, parent_id=body.parent_id, review_note=body.review_note)
+        except ConflictError as e:
+            raise HTTPException(409, str(e)) from None
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        return record
 
-with tab_manual:
-    st.subheader("Describe a new use case by picking its characteristics")
-    st.write(
-        "The original, form-based way to add a use case: pick the form of "
-        "use and a value for each dimension directly, rather than letting "
-        "the classifier infer them from free text."
-    )
+    @application.get('/api/events')
+    def metadata_events():
+        filename = os.environ.get('GENAI_EVENT_DB', '')
+        enabled = os.environ.get('GENAI_LOG_METADATA') == '1' and bool(filename)
+        return {'enabled': enabled, 'events': read_metadata_events(Path(filename)) if enabled else [], 'note': 'Prompt-event metadata only; these events are not classified use cases or proof of review.'}
 
-    name = st.text_input(
-        "Short name for this use case",
-        placeholder="e.g. Summarizing a loan file for a relationship manager",
-    )
+    @application.get('/api/records')
+    def records():
+        return store.list(latest_only=True)
 
-    form_options = {f["name"]: f["id"] for f in FORMS_OF_USE}
-    form_name = st.selectbox("Form of use", list(form_options.keys()))
-    form_id = form_options[form_name]
-    st.caption(FORM_BY_ID[form_id]["description"])
+    @application.get('/api/records/{record_id}')
+    def detail(record_id: str):
+        record = store.get(record_id)
+        if record is None:
+            raise HTTPException(404, 'Record not found.')
+        return {'record': record, 'history': [r for r in store.list() if r['case_id'] == record['case_id']]}
 
-    answers = {}
-    cols = st.columns(len(DIMENSIONS))
-    for col, dim in zip(cols, DIMENSIONS):
-        with col:
-            answers[dim["id"]] = st.radio(
-                dim["name"], dim["options"], help=dim["question"], key=f"dim_{dim['id']}"
-            )
-
-    st.divider()
-    st.subheader("Risk areas and controls that apply")
-    render_risk_panel(answers)
-
-    if st.button("Add this use case to the register", type="primary", disabled=not name):
-        entry = {"name": name, "form": form_id, **answers, "source": "manual", "logged_at": now()}
-        st.session_state.register.append(entry)
-        st.success(f"Added “{name}” to the register.")
-
-with tab_eval:
-    st.subheader("How accurate is the classifier?")
-    st.write(
-        "The thesis explicitly does not validate its framework against data "
-        "(Section 2.5, Section 6). This is a small attempt to do exactly "
-        "that: eval/cases.py holds 16 hand-labeled, synthetic use-case "
-        "descriptions, and eval/run_eval.py runs the classifier against them "
-        "and reports per-dimension accuracy."
-    )
-    st.code("python eval/run_eval.py", language="bash")
-    st.write(
-        "It needs a key for whichever provider `LLM_PROVIDER` selects in your "
-        ".env (see .env.example) and writes a full report to eval/results.md. "
-        "Run it locally and the report there is the real result, this tab "
-        "doesn't fabricate one."
-    )
-
-with tab_framework:
-    st.subheader("Four forms of employee generative AI use")
-    st.table(
-        pd.DataFrame(
-            [
-                {
-                    "Form": f["name"],
-                    "Description": f["description"],
-                    "Illustrative examples": "; ".join(f["examples"]),
-                }
-                for f in FORMS_OF_USE
-            ]
-        )
-    )
-
-    st.subheader("Five dimensions for comparing use cases")
-    st.table(
-        pd.DataFrame(
-            [
-                {
-                    "Dimension": d["name"],
-                    "Question": d["question"],
-                    "Illustrative variations": "; ".join(d["options"]),
-                }
-                for d in DIMENSIONS
-            ]
-        )
-    )
-
-    st.subheader("Full risk-to-control table")
-    st.table(
-        pd.DataFrame(
-            [
-                {
-                    "Risk area": r["name"],
-                    "Mechanism": r["mechanism"],
-                    "Control objective": r["control_objective"],
-                    "Illustrative controls": "; ".join(r["illustrative_controls"]),
-                    "Main responsible parties": r["responsible_parties"],
-                }
-                for r in RISK_AREAS
-            ]
-        )
-    )
-
-st.divider()
-st.caption(
-    "Built on the framework developed in Delegeanu, D. (2026), “The Use of "
-    "Generative Artificial Intelligence in Banks: Governance, Risks, and "
-    "Internal Controls,” Bachelor's thesis, Bocconi University. This tool is "
-    "an illustrative demonstration, not a validated risk-management product, "
-    "and it does not assign formal risk ratings."
-)
+    @application.get('/api/export/{format}')
+    def export(format: str):
+        records = store.list()
+        if format == 'csv':
+            return Response(export_csv(records), media_type='text/csv', headers={'Content-Disposition': 'attachment; filename=governance-register.csv'})
+        if format == 'json':
+            return Response(json.dumps(records, indent=2, ensure_ascii=False), media_type='application/json', headers={'Content-Disposition': 'attachment; filename=governance-register.json'})
+        raise HTTPException(404, 'Export format not found.')
+    return application
+if __name__ == '__main__':
+    from dotenv import load_dotenv
+    import uvicorn
+    load_dotenv(ROOT / '.env', override=False)
+    uvicorn.run(create_app(), host='127.0.0.1', port=8501, access_log=False)

@@ -1,128 +1,126 @@
-# GenAI Use-Case Register for Banks
+# GenAI Bank Governance
 
-Built on my Bachelor's thesis at Bocconi University:
+**A research prototype for reviewing employee AI use, not just approving AI tools.**
 
-> Delegeanu, D. (2026). *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls.* Bachelor's thesis, Bocconi University.
+An independent software extension of Davide Delegeanu's Bocconi bachelor's thesis, *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls* (2026).
 
-The thesis argues that employee generative AI use in banks cannot be governed by looking at the tool alone. It develops a framework built around four recurring **forms of use**, five **dimensions** for comparing individual use cases, and an integrated table connecting the resulting risk mechanisms to control objectives, illustrative controls and responsible parties, organized around the Three Lines Model. It also explicitly says what it doesn't do: it identifies circumstances in which risk mechanisms may arise, but it does not test the framework against data (Sections 2.5 and 6).
+The workspace describes an employee activity across five dimensions, maps relevant risks to the thesis's controls and responsible functions, and records a human-reviewed assessment. Optional model extraction assists data entry; a separate, inspectable policy determines the illustrative triage outcome.
 
-This project does two things the thesis itself doesn't. It turns the framework into a working **use-case register**, the control the thesis proposes in Section 5.2 but only describes on paper. And it adds an **automatic classifier** on top of that register: instead of filling in a form, you describe what you did in plain language, and an LLM reads the description and infers the five dimensions itself, the way a real usage log sitting behind an enterprise AI gateway would need to work. A small labeled evaluation set then tests how well that classification actually holds up, which is a first, modest answer to the thesis's own open question about validating the framework against data.
+![Workspace overview with a paired public-information and client-information example](docs/images/overview-desktop.png)
 
-## What it does
+## Run locally
 
-- **Auto-classify.** Describe a use case in your own words (e.g. "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan"). An LLM classifies it against the thesis's five dimensions, the app maps that to the relevant risk areas and an illustrative outcome (Standard controls, Clarification required, Review required or Do not proceed), and logs the entry with a timestamp.
-- **Register.** A running log of every use case, manual or auto-classified, pre-loaded with six synthetic examples inspired by the thesis's Table 4. Exportable as CSV.
-- **Add manually.** The original form-based entry: pick the form of use and a value for each dimension directly.
-- **Classifier accuracy.** Points at `eval/`, where the classifier is checked against a benchmark of 64 synthetic prompts covering 24 scenarios. No live accuracy figure has been measured.
-- **The framework.** The underlying tables from the thesis (four forms of use, five dimensions, the full nine-area risk-to-control comparison) laid out for reference.
-
-## How to use it
-
-Once `streamlit run app.py` opens the app in your browser, there are five tabs across the top.
-
-**Auto-classify** is the main one. Type a plain-language description of something a bank employee did with a generative AI tool, for example "I pasted a client's loan file into ChatGPT's public website and asked it to recommend whether to approve the loan," and click Classify and log. You'll get back five tiles (one per dimension the thesis defines), the model's one-line reasoning, and a panel below showing every risk area that applies, each with its control objective, suggested controls, who'd typically be responsible, and the thesis's own stated limitation of that control. At the top of that panel is an Action badge: green "Standard controls" for routine, low-risk activity, blue "Clarification required" when key facts are missing, orange "Review required" for something a bank's compliance or risk team would want to look at, red "Do not proceed" for a combination (like confidential client data going to an unapproved public tool) that a policy would typically stop outright. Every classification, successful or not, counts against a session limit shown just above the button, there to cap how many paid API calls one sitting can rack up; it resets if you restart the app.
-
-**Register** is the running log, every use case you've added, by hand or through Auto-classify, in one table, downloadable as a CSV. It starts pre-loaded with six synthetic example use cases inspired by the thesis's Table 4 (their category values are illustrations, not findings from the thesis), so there's always something to look at even before you add your own.
-
-**Add manually** is the same risk and control analysis, but you build the use case yourself from dropdowns instead of typing a description, useful for testing a specific combination directly, or if you don't want to use an API key at all for that part.
-
-**Classifier accuracy** explains, and points you to, the evaluation script. It doesn't run anything itself, the actual numbers only exist once you run `python eval/run_eval.py` yourself.
-
-**The framework** is pure reference, the thesis's own tables (the four forms of use, the five dimensions, the full risk-to-control comparison) laid out so you can look something up without re-opening the thesis PDF.
-
-## Why this design
-
-The risk-to-action logic in `mapper.py` is a simplified, rule-based heuristic, not a formal risk engine, deliberately mirroring the thesis's own disclaimer that it identifies circumstances in which risk mechanisms may arise rather than assigning formal risk ratings (Section 1.2). The thresholds follow the proportionality logic set out in Section 5.2: individual assessment matters more when the tool can reach confidential information, when the output is customer-facing or supports regulated work, when generated code enters an internal system, or when the employee cannot evaluate the output independently.
-
-The classifier is intentionally conservative: when a description doesn't make a dimension clear, the prompt tells it to pick the higher-risk plausible value rather than guess low, since under-classifying is worse than over-classifying.
-
-## Running it
+Python 3.10 or newer. The complete manual workflow runs without model credentials.
 
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-llm.txt   # only needed for live classification
-cp .env.example .env   # set ENABLE_LIVE_CLASSIFICATION=1, LLM_PROVIDER, LLM_MODEL and that provider's API key
-export $(cat .env | xargs)
-streamlit run app.py
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+python -m eval.run_eval --validate-only
+python app.py
 ```
 
-The Register, Add manually and The framework tabs work without an API key. Auto-classify and the evaluation script need one.
+Open **http://127.0.0.1:8501**. On Windows, activate the environment with `.venv\Scripts\activate`.
 
-### Choosing a model provider
+This release uses **FastAPI and a local HTML/CSS/JavaScript interface**, replacing the original Streamlit frontend. The launcher is now `python app.py`, not `streamlit run app.py`. The Python framework, optional provider layer and deterministic policy remain independently usable.
 
-The classifier isn't tied to one vendor. `providers.py` supports four, selected by `LLM_PROVIDER` in `.env` (default `anthropic`). Live classification is off unless `ENABLE_LIVE_CLASSIFICATION=1`, and it requires `LLM_MODEL` to name an exact model available in your account:
+## What the application does
 
-| `LLM_PROVIDER` | Key variable | Get a key |
-|---|---|---|
-| `anthropic` | `ANTHROPIC_API_KEY` | console.anthropic.com/settings/keys |
-| `openai` | `OPENAI_API_KEY` | platform.openai.com/api-keys |
-| `grok` | `XAI_API_KEY` | console.x.ai |
-| `gemini` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+1. Start with a blank use case or a clearly labelled synthetic example.
+2. Enter the known characteristics manually, or explicitly request extraction from a configured model.
+3. Resolve unknowns and correct the classification. Tool approval and approval of this particular use are separate.
+4. Examine triggered rules, relevant controls, responsible functions and remaining limitations.
+5. Record the owner, reviewer and review note. Saving does not grant permission to use a tool.
+6. Create new revisions rather than overwriting assessments. Export the complete history as JSON or a spreadsheet-safe CSV summary.
 
-Set `LLM_MODEL` in `.env` to the model you want to use; no default model is assumed. OpenAI, Grok and Gemini all go through the `openai` Python package (Grok and Gemini each publish an OpenAI-compatible endpoint, so `providers.py` just points the same client at a different `base_url`); Anthropic goes through its own SDK. The Auto-classify tab shows which provider and model are active.
+The five thesis dimensions are **tool/access, information, role of output, banking process, and task/employee expertise**. Multiple forms of use can apply. Approval status, explicit unknowns, triage rules and record versions are software extensions, not additional empirical findings of the thesis.
 
-## Evaluating the classifier
+### Triage, not a risk score
+
+| Outcome | Interpretation |
+|---|---|
+| Standard controls | No additional escalation under the illustrative policy; baseline controls still apply. Not approval. |
+| Clarification required | Information needed for assessment is absent. |
+| Review required | At least one explicit review condition applies. Unresolved information may still remain. |
+| Do not proceed | Sensitive information and an explicitly unapproved use trigger a stop recommendation under the sample policy. Not technical enforcement. |
+
+Policy rules are in [`data/policy.json`](data/policy.json). Each saved revision includes the exact policy, its hash, the applicable control text, the original prediction when available, reviewer corrections and model provenance. Historical records are not recalculated when a policy changes.
+
+![Assessment showing rule explanations, uncertainty and control responsibilities](docs/images/assessment-desktop.png)
+
+## Optional model extraction
 
 ```bash
-python -m eval.run_eval --validate-only   # offline dataset and policy checks, no model calls
-python -m eval.run_eval --live             # needs ENABLE_LIVE_CLASSIFICATION=1 and a provider key
+python -m pip install -r requirements-llm.txt
 ```
 
-The validation run checks the 64 prompts in `eval/benchmark.json` against the policy rules without calling a model. The live run sends them to your configured provider and writes results under `eval/results/`. None of the test cases describe a real bank or real client data, they were written for this project to test whether the classifier recovers the same dimension values a human reviewer would assign from a plain description.
+Create a local `.env` by copying `.env.example` **only when you do not already have a `.env`**. Set:
 
-## Running the tests
+```dotenv
+ENABLE_LIVE_CLASSIFICATION=1
+LLM_PROVIDER=anthropic
+LLM_MODEL=your-account-model-identifier
+ANTHROPIC_API_KEY=your-local-key
+```
+
+Supported adapter choices are `anthropic`, `openai`, `grok` and `gemini`; use the corresponding key name from `.env.example`. Choose a model that supports the selected text endpoint. No model availability, cost or accuracy is implied. Restart the app after editing configuration.
+
+Extraction requires explicit confirmation in the interface before a description is sent to the provider. JSON/schema validation catches malformed output, not all semantic errors or prompt injection. Exact evidence excerpts aid review; they are not proof that an inferred category is true. Models can return unknown values, and reviewers can correct fields before saving.
+
+The workspace caps daily classification operations at 30. An operation can contain up to three provider attempts; this is not a monetary spending cap. SDK retries are disabled to avoid multiplying retries. Individual requests have a 25-second timeout. See [architecture and provider notes](docs/ARCHITECTURE.md).
+
+## Verification
+
+This release was checked locally with **113 passing Python tests**. One test enumerates **1,440 valid combinations** to check policy invariants. These are not 1,440 model evaluations.
+
+The evaluation dataset contains **64 synthetic prompts representing 24 semantic scenarios**. Several prompts are correlated wording variants; labels are not independently adjudicated by banking experts. No live-model accuracy is published or implied.
 
 ```bash
-pip install -r requirements-dev.txt
-pytest tests/
+python -m pytest -q
+python -m eval.run_eval --validate-only
+# Explicitly configured, billable model evaluation:
+python -m eval.run_eval --live --split holdout --output eval/results/holdout-run-01.json
 ```
 
-`tests/test_mapper.py` and `tests/test_classifier.py` cover the deterministic logic (risk mapping, JSON extraction, validation) without calling any real provider; `tests/test_providers.py` covers provider selection and the retry-on-transient-failure wrapper; `tests/test_hook.py` covers the optional prompt-event hook described below. These run in CI on every push (`.github/workflows/tests.yml`), along with `python scripts/check_package.py`, which fails if the tracked tree contains an environment file, a raw log, a database, a patch or a bundle.
+The live evaluator includes failures in attempted-case denominators and compares outcomes against independently specified sample-policy expectations. Existing report files are never overwritten. Published reports must retain their model, dataset and policy metadata.
 
-## Optional prompt-event hook
+See the [verification record](docs/VERIFICATION.md), [dataset card](docs/DATASET_CARD.md) and [policy decision table](docs/POLICY.md).
 
-`claude-plugin/genai-usage-logger` is a small, opt-in Claude Code plugin. It no longer reads or classifies prompts. For each submitted prompt it records only a timestamp, the event type, a random event id and the prompt's character count, in a local SQLite file. It keeps no prompt text, no content hash, no session id, no transcript path and no working directory, and it makes no model call. A prompt event is not a complete business use case, and a count of events is not evidence that anything was reviewed.
+## Privacy and deployment boundaries
 
-It does nothing unless you turn it on in the shell that starts the coding tool:
+**Local, single-user research prototype. Do not deploy this publicly or enter real banking/customer data.**
 
-```bash
-export GENAI_LOG_METADATA=1
-export GENAI_EVENT_DB="$HOME/.local/share/genai-governance/events.sqlite"
-```
+The database is local SQLite. Descriptions, model excerpts and rationales are not persisted unless explicitly selected; record names, owner/reviewer fields and notes are always stored. Pending model classifications remain in process memory until expiry cleanup, eviction or shutdown. Do not place secrets in any field.
 
-The path must be absolute. At most 1,000 events are kept, and events older than seven days are removed on the next write.
+There is no authenticated reviewer identity, encryption at rest, tamper-proof log, legal classification or enterprise approval workflow. A database record does not prove that a control operated. Local origin/token checks are defense in depth, not a substitute for authentication.
 
-The earlier version of this plugin appended every raw prompt to `data/auto_log.jsonl` and classified it in the background. That created a second store of potentially confidential text and a second path to a model provider, so it has been removed. Updating this repository does not unload an already installed copy of the old plugin: disable it in your plugin manager before using the replacement. Existing `data/auto_log.jsonl` files are not imported or deleted, and the Register tab no longer reads them; review and remove them yourself if you no longer need them.
+The optional prompt hook is **metadata-only, opt-in and retrospective**. It makes no classification call and cannot prevent a submitted prompt. The previous raw-prompt auto-classification hook has been removed. Updating source does not unload an already installed old plugin: disable the old installation before testing the replacement. See [privacy and hook migration](docs/PRIVACY.md).
 
-## Security notes
-
-This is a local script, not a hosted web app, so most of a typical web security checklist (authentication, user roles, database hardening, CORS) doesn't apply, there's no server, no accounts and no database. What does apply, and what this project actually does:
-
-- The API key is only ever read from an environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` or `GEMINI_API_KEY`, depending on `LLM_PROVIDER`), never hardcoded. `.env` is in `.gitignore` and was never committed; checked against the full git history, not just the latest commit.
-- The classifier's output is validated against a fixed allow-list of values before it's used for anything (`classifier._validate`). A free-text description that tried to manipulate the model into returning an arbitrary classification would just fail validation, not get accepted.
-- Free-text input is capped at 1,500 characters, both in the UI and server-side, to bound API cost per request.
-- Classifications are capped per session (30 by default) as a simple guard against runaway API spend if this is ever deployed somewhere other than your own machine.
-- Streamlit escapes rendered text by default; nothing in this app uses `unsafe_allow_html`, `eval`, `exec` or `pickle`.
-- The optional prompt-event hook stores no prompt content (see above), and it is off unless you opt in.
-
-If you ever do deploy this somewhere public (Streamlit Community Cloud, for instance), the one thing worth adding before you do is a real rate limit tied to IP or an auth layer, not just the per-session counter above, since a new session resets it.
+![Saved synthetic assessments in the local register](docs/images/register-desktop.png)
 
 ## Project structure
 
-```
-data/framework.py    the four forms of use, five dimensions and risk-to-control table, as data
-mapper.py             rule-based mapping from a use case's dimensions to risk areas and an action
-classifier.py          LLM-based classification of a free-text description into the five dimensions
-providers.py           picks and calls the model provider (Anthropic, OpenAI, Grok, Gemini) behind classifier.py
-storage.py             local SQLite store with immutable assessment revisions and CSV or JSON export (not yet used by the Streamlit page)
-eval/benchmark.json   64 synthetic prompts in 24 scenarios, with expected policy outcomes
-eval/run_eval.py      validates the benchmark offline and runs the optional live evaluation
-app.py                 the Streamlit app
-claude-plugin/         optional metadata-only prompt-event hook
-tests/                 pytest suite for mapper.py, classifier.py and providers.py (no real API calls)
-scripts/check_package.py       fails if runtime or private files are tracked, or attribution settings change
+```text
+app.py                 Local HTTP application and boundary checks
+web/                   Responsive browser interface
+schema.py              Classification contract and explicit unknown values
+data/framework.py      Thesis taxonomy, controls and illustrative examples
+data/policy.json       Versioned, declarative triage rules
+classifier.py          Model extraction and output validation
+providers.py           Optional provider adapters and bounded retries
+mapper.py              Explainable risk/control mapping and triage
+storage.py             Local revision records and CSV/JSON export
+eval/                  Synthetic benchmark and reporting
+tests/                 Offline regression and integration checks
+claude-plugin/         Optional metadata-only prompt-event hook
+scripts/               Release hygiene and isolated UI verification
 ```
 
-## A note on how this was built
+## Research basis
 
-I built this with the help of generative AI, which helped turn the thesis's tables into structured data and app logic, and helped build the classifier and evaluation harness. The framework, the thesis it's drawn from, the project direction and the evaluation design are my own.
+Delegeanu, D. (2026). *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls*. Bocconi University. Sections 3.2-3.3 define the forms and dimensions; Sections 5.2-5.6 connect use cases, controls and responsibilities. The thesis is a literature-based analytical synthesis, not empirical validation using bank workflows.
+
+This repository does not assert compliance with the AI Act, GDPR, DORA or any other legal framework. The controls and policy are illustrative. An organization would need to define its own acceptable uses, review requirements and risk acceptance.
+
+[Research-to-software mapping](docs/RESEARCH_MAPPING.md) · [Demonstration script](docs/DEMO.md) · [Change log](CHANGELOG.md)
