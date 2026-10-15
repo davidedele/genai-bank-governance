@@ -31,6 +31,17 @@ const LOG_PATH = 'data/auto_log.jsonl'
 const SCAN_INTERVAL_MS = 20_000
 const CLASSIFIER_MODEL = 'haiku'
 const MAX_TEXT_CHARS = 1500
+// A "failed" entry (bad JSON, a dropped request) is retried this many
+// times on later scan ticks before being left alone for good, so one
+// flaky model response doesn't permanently lose that prompt's entry.
+const MAX_CLASSIFY_ATTEMPTS = 3
+// The log file is read and rewritten in full on every scan tick and every
+// prompt, so letting it grow forever over a long-running session would make
+// both operations slower every time, not just use more disk. Once the
+// classified/failed backlog passes this count, the oldest entries in that
+// backlog are dropped first, never a "pending" one, since that would lose
+// a classification that hasn't happened yet.
+const MAX_LOG_ENTRIES = 2000
 
 type Entry = {
   id: string
@@ -40,6 +51,12 @@ type Entry = {
   loggedAt: string
   classifiedAt?: string
   source: 'claude-code-auto'
+  // True when `text` is the truncated head of a longer prompt (see
+  // MAX_TEXT_CHARS / buildPrompt below). Kept on the entry, not just in the
+  // prompt sent to the model, so the log itself is honest about the fact
+  // that the classification ran on partial information.
+  truncated?: boolean
+  attempts?: number
   form?: string
   tool_access?: string
   information_involved?: string
@@ -133,11 +150,16 @@ const DIMENSIONS = [
   },
 ] as const
 
-function buildPrompt(text: string): string {
+function buildPrompt(text: string, truncated: boolean): string {
   const formsBlock = FORMS_OF_USE.map(f => `- ${f.id}: ${f.name} (${f.description})`).join('\n')
   const dimsBlock = DIMENSIONS.map(
     d => `${d.id} (${d.name}): ${d.question}\nAllowed values: ${d.options.join(' | ')}`,
   ).join('\n\n')
+  const truncationNote = truncated
+    ? '\n\nNote: the text below was cut off at a length limit, so it may be ' +
+      "missing its ending. Treat anything you can't determine because of " +
+      'that as unknown and apply the conservative-default instruction below.'
+    : ''
 
   return `You are classifying a short, plain-language description of something a bank
 employee did with a generative AI tool, against a fixed set of categories.
@@ -161,7 +183,7 @@ regulatory in nature. The topic of the content is not the same as the
 process the employee's work actually affects.
 
 Employee's description of what they did:
-"""${text.slice(0, MAX_TEXT_CHARS)}"""
+"""${text.slice(0, MAX_TEXT_CHARS)}"""${truncationNote}
 
 Classify this use case. Use only information stated or clearly implied by the
 description. If a dimension cannot be determined from the description, pick
@@ -189,12 +211,38 @@ function isValidClassification(parsed: any): boolean {
   return DIMENSIONS.every(d => d.options.includes(parsed[d.id]))
 }
 
-function parseModelJson(raw: string): any {
-  let cleaned = raw.trim()
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(json)?/i, '').replace(/```$/, '').trim()
+// Mirrors classifier.py's _extract_json_object(): scans for the first
+// balanced {...} block rather than just stripping a code fence, since not
+// every provider is equally disciplined about returning bare JSON
+// (GPT-4o-mini sometimes adds a trailing sentence after the closing brace,
+// which a simple fence-strip doesn't handle).
+function extractJsonObject(raw: string): string {
+  const start = raw.indexOf('{')
+  if (start === -1) return raw.trim()
+
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]
+    if (inString) {
+      if (escape) escape = false
+      else if (ch === '\\') escape = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return raw.slice(start, i + 1)
+    }
   }
-  return JSON.parse(cleaned)
+  return raw.slice(start)
+}
+
+function parseModelJson(raw: string): any {
+  return JSON.parse(extractJsonObject(raw.trim()))
 }
 
 async function readLog($: any): Promise<Entry[]> {
@@ -213,6 +261,47 @@ async function writeLog($: any, entries: Entry[]): Promise<void> {
   await $.fs.write(LOG_PATH, text)
 }
 
+// prompt.submit (adding one new "pending" entry) and the session.start
+// timer (rewriting a batch of entries it just classified) both read-modify-
+// write the same file with no locking. Without this, a write finishing
+// after a slower one can silently erase it: the timer reads the file,
+// spends a few seconds classifying, a new prompt is submitted and written
+// in that gap, then the timer's own write goes out based on its stale
+// read and wipes out that new entry.
+//
+// mergeAndWrite closes that gap by re-reading the file immediately before
+// writing and folding in anything that showed up there since the caller's
+// own read, keyed by id (the caller's version of a given id wins, since it
+// reflects more recent state for that entry).
+async function mergeAndWrite($: any, updated: Entry[]): Promise<void> {
+  let onDisk: Entry[] = []
+  try {
+    onDisk = await readLog($)
+  } catch {
+    onDisk = []
+  }
+  const byId = new Map<string, Entry>()
+  for (const e of onDisk) byId.set(e.id, e)
+  for (const e of updated) byId.set(e.id, e)
+  await writeLog($, trimLog(Array.from(byId.values())))
+}
+
+// Keeps the file from growing without bound over a long-running session.
+// "pending" entries are always kept, however many there are, since dropping
+// one would lose a prompt before it was ever classified; if the backlog of
+// already-resolved (classified/failed) entries exceeds MAX_LOG_ENTRIES, the
+// oldest of those are dropped first, oldest-logged first.
+function trimLog(entries: Entry[]): Entry[] {
+  const pending = entries.filter(e => e.status === 'pending')
+  const resolved = entries
+    .filter(e => e.status !== 'pending')
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+
+  const overflow = resolved.length - MAX_LOG_ENTRIES
+  const keptResolved = overflow > 0 ? resolved.slice(overflow) : resolved
+  return [...keptResolved, ...pending]
+}
+
 export const register: Register = on => {
   // Stage 1: capture every genuine prompt, cheaply, and let it through at once.
   // Wrapped so that logging can never deny or delay the actual prompt: the
@@ -223,16 +312,19 @@ export const register: Register = on => {
     try {
       const text = e.text.trim()
       if (!e.isMeta && !e.command && text.length > 0) {
-        const entries = await readLog($)
-        entries.push({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          text,
-          name: text.length > 80 ? `${text.slice(0, 80)}…` : text,
-          status: 'pending',
-          loggedAt: new Date().toISOString(),
-          source: 'claude-code-auto',
-        })
-        await writeLog($, entries)
+        // Only the one new entry is written here (via mergeAndWrite, not a
+        // full read-modify-write of the whole file) so this can never clobber
+        // a concurrent write from the session.start scan timer below.
+        await mergeAndWrite($, [
+          {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            text,
+            name: text.length > 80 ? `${text.slice(0, 80)}…` : text,
+            status: 'pending',
+            loggedAt: new Date().toISOString(),
+            source: 'claude-code-auto',
+          },
+        ])
       }
     } catch {
       // Logging must never block or break the person's actual prompt.
@@ -251,20 +343,33 @@ export const register: Register = on => {
         return
       }
 
-      const pending = entries.filter(x => x.status === 'pending')
-      if (pending.length === 0) return
+      // Retry entries that failed before too (a dropped request, a model
+      // reply that didn't parse), not just ones still "pending", but only
+      // up to MAX_CLASSIFY_ATTEMPTS, so a response that will never validate
+      // (not a transient hiccup) doesn't get retried forever.
+      const toClassify = entries.filter(
+        x =>
+          x.status === 'pending' ||
+          (x.status === 'failed' && (x.attempts ?? 1) < MAX_CLASSIFY_ATTEMPTS),
+      )
+      if (toClassify.length === 0) return
 
       let classifiedCount = 0
-      for (const entry of pending) {
+      const processed: Entry[] = []
+      for (const entry of toClassify) {
+        entry.attempts = (entry.attempts ?? 0) + 1
+        entry.truncated = entry.text.length > MAX_TEXT_CHARS
+
         const result = await $.model.complete({
           model: CLASSIFIER_MODEL,
-          prompt: buildPrompt(entry.text),
+          prompt: buildPrompt(entry.text, entry.truncated),
           maxTokens: 400,
         })
 
         if (!result.isAnswered) {
           entry.status = 'failed'
           entry.error = result.reason
+          processed.push(entry)
           continue
         }
 
@@ -287,13 +392,17 @@ export const register: Register = on => {
           entry.status = 'failed'
           entry.error = String(err)
         }
+        processed.push(entry)
       }
 
       try {
-        await writeLog($, entries)
+        // Only the entries this tick actually touched are merged in, so a
+        // prompt.submit that landed mid-scan isn't lost (see mergeAndWrite).
+        await mergeAndWrite($, processed)
       } catch {
-        // If the write fails, the entries stay "pending" and are retried
-        // on the next tick rather than lost.
+        // If the write fails, these entries' attempts increments are lost
+        // too, but their in-file status is still whatever it was before
+        // this tick, so the next tick retries them rather than losing them.
         return
       }
 

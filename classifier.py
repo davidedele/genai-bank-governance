@@ -26,6 +26,47 @@ from providers import complete, current_model, current_provider_id, ProviderErro
 MAX_DESCRIPTION_CHARS = 1500
 
 
+def _extract_json_object(raw: str) -> str:
+    """Pull out the first balanced {...} block in `raw`.
+
+    The model is asked for raw JSON and usually returns exactly that, but
+    not every provider is equally disciplined about it (GPT-4o-mini
+    sometimes wraps the object in a ```json fence, or adds a trailing
+    sentence after the closing brace). Stripping a leading/trailing code
+    fence doesn't handle either case; scanning for the first balanced brace
+    pair does, and it ignores braces inside a quoted string (e.g. in the
+    rationale text) so it doesn't stop early on something like {"a": "b}"}.
+    """
+    start = raw.find("{")
+    if start == -1:
+        return raw.strip()
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(raw)):
+        ch = raw[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : i + 1]
+    # No balanced close found; fall back to whatever's left and let the
+    # caller's json.loads surface a clear parse error.
+    return raw[start:]
+
+
 class ClassificationError(Exception):
     pass
 
@@ -105,16 +146,14 @@ def classify_use_case(description: str) -> dict:
     except ProviderError as e:
         raise ClassificationError(str(e)) from e
 
-    # The model is asked for raw JSON; strip code fences defensively in case
-    # it wraps the output anyway.
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    # The model is asked for raw JSON; extract the first balanced {...}
+    # block defensively in case it wraps the output in a code fence or adds
+    # commentary before/after it anyway (see _extract_json_object's own
+    # docstring for why this is more robust than just stripping fences).
+    candidate = _extract_json_object(raw)
 
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(candidate)
     except json.JSONDecodeError as e:
         raise ClassificationError(f"Could not parse model output as JSON: {raw!r}") from e
 

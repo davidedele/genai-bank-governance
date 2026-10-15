@@ -22,6 +22,16 @@ See .env.example for the API-key variable each provider reads.
 """
 
 import os
+import time
+
+# How many times to retry a single completion call after a transient failure
+# (timeout, rate limit, connection reset), and how long to wait between
+# attempts. A bad API key or missing package fails the same way every time,
+# so complete() below only retries once the first attempt has actually
+# reached the provider and failed there, not for setup errors it already
+# caught before calling the SDK.
+MAX_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 1.5
 
 PROVIDERS = {
     "anthropic": {
@@ -104,7 +114,8 @@ def complete(prompt: str, max_tokens: int = 400) -> str:
                 "The 'anthropic' package is not installed. Run: "
                 "pip install anthropic"
             ) from e
-        try:
+
+        def _call_anthropic():
             client = anthropic.Anthropic(api_key=api_key)
             response = client.messages.create(
                 model=model,
@@ -112,10 +123,8 @@ def complete(prompt: str, max_tokens: int = 400) -> str:
                 messages=[{"role": "user", "content": prompt}],
             )
             return response.content[0].text.strip()
-        except Exception as e:
-            raise ProviderError(
-                f"Anthropic API call failed (model {model!r}): {e}"
-            ) from e
+
+        return _with_retries(_call_anthropic, provider["label"], model)
 
     # Everything else (OpenAI itself, and OpenAI-compatible providers like
     # Grok and Gemini) goes through the same openai.OpenAI client, just
@@ -126,7 +135,8 @@ def complete(prompt: str, max_tokens: int = 400) -> str:
         raise ProviderError(
             "The 'openai' package is not installed. Run: pip install openai"
         ) from e
-    try:
+
+    def _call_openai_compatible():
         client = openai.OpenAI(api_key=api_key, base_url=provider["base_url"])
         response = client.chat.completions.create(
             model=model,
@@ -134,7 +144,28 @@ def complete(prompt: str, max_tokens: int = 400) -> str:
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
-        raise ProviderError(
-            f"{provider['label']} API call failed (model {model!r}): {e}"
-        ) from e
+
+    return _with_retries(_call_openai_compatible, provider["label"], model)
+
+
+def _with_retries(call, provider_label: str, model: str) -> str:
+    """Run `call()` up to MAX_ATTEMPTS times, pausing between failures.
+
+    A single flaky request (timeout, rate limit, dropped connection) would
+    otherwise permanently fail one classification. Retrying here, where the
+    actual network call happens, covers every caller at once.
+    """
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as e:  # noqa: BLE001 - deliberately broad: SDKs
+            # raise their own distinct exception types per provider, and all
+            # of them are worth one retry before giving up.
+            last_error = e
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+    raise ProviderError(
+        f"{provider_label} API call failed (model {model!r}) after "
+        f"{MAX_ATTEMPTS} attempts: {last_error}"
+    ) from last_error
