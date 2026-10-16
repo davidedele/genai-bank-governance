@@ -29,13 +29,19 @@ def demo_mode():
     """Public demo: no AI calls, no prompt capture, a capped shared register."""
     return os.environ.get('GOVERNANCE_DEMO', '0') == '1'
 
-def allowed_hosts():
-    """Local names, plus the public host names named in the environment (demo only)."""
-    hosts = set(LOCAL_HOSTS)
-    if demo_mode():
-        extra = os.environ.get('GOVERNANCE_ALLOWED_HOSTS', '') + ',' + os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
-        hosts |= {h.strip().lower() for h in extra.split(',') if h.strip()}
-    return hosts
+def host_allowed(hostname):
+    """Local names always; in demo mode also the public host names named in the environment.
+    An entry starting with a dot, such as .hf.space, allows that domain and its subdomains."""
+    hostname = (hostname or '').lower()
+    if hostname in LOCAL_HOSTS:
+        return True
+    if not demo_mode():
+        return False
+    extra = os.environ.get('GOVERNANCE_ALLOWED_HOSTS', '') + ',' + os.environ.get('SPACE_HOST', '')
+    for entry in (h.strip().lower() for h in extra.split(',') if h.strip()):
+        if hostname == entry or (entry.startswith('.') and hostname.endswith(entry)):
+            return True
+    return False
 
 def live_enabled():
     return not demo_mode() and os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') == '1'
@@ -82,11 +88,12 @@ def create_app(db_path: Path | None=None):
         hostname = urlparse('http://' + host).hostname
         if request.url.path == '/healthz':
             return JSONResponse({'ok': True})
-        if hostname not in allowed_hosts():
+        if not host_allowed(hostname):
             return JSONResponse({'detail': 'This workspace accepts local hosts only.'}, status_code=403)
         origin = request.headers.get('origin')
-        scheme = request.headers.get('x-forwarded-proto', request.url.scheme) if demo_mode() else request.url.scheme
-        if origin and origin != f'{scheme}://{host}':
+        # Behind a hosting proxy the scheme seen here is plain http, so in demo mode the host name alone must match.
+        same_origin = urlparse(origin).netloc == host if (origin and demo_mode()) else origin == f'{request.url.scheme}://{host}'
+        if origin and not same_origin:
             return JSONResponse({'detail': 'Cross-origin requests are not accepted.'}, status_code=403)
         if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
             supplied = request.headers.get('x-workspace-token', '')
@@ -101,7 +108,8 @@ def create_app(db_path: Path | None=None):
             if length > 64000:
                 return JSONResponse({'detail': 'Request exceeds the local input limit.'}, status_code=413)
         response = await call_next(request)
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        frame_ancestors = 'https://huggingface.co https://*.hf.space' if demo_mode() else "'none'"
+        response.headers['Content-Security-Policy'] = f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors {frame_ancestors}; base-uri 'none'; form-action 'self'"
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'

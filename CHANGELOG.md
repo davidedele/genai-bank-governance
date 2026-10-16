@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added a public demo mode (`GOVERNANCE_DEMO=1`) with a `render.yaml` blueprint and a deploy button. It turns off AI suggestions and prompt capture, accepts only the named public host, caps the shared register and shows a demo notice.
+- Added a public demo mode (`GOVERNANCE_DEMO=1`) with a Dockerfile for a free Hugging Face Space. It turns off AI suggestions and prompt capture, accepts only the named public hosts, caps the shared register and shows a demo notice.
 
 ## 0.2.0 - 2026-10-15
 

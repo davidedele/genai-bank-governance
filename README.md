@@ -27,13 +27,15 @@ Then open **http://127.0.0.1:8501**. Press `Ctrl+C` in the terminal to stop it. 
 
 ## Try it online
 
-You can put your own copy of the app online for free, so that anyone can try it in the browser without installing anything.
+The app can run as a free public demo on Hugging Face Spaces, so anyone can try it in the browser without installing anything. It needs a free Hugging Face account and no card.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/davidedele/genai-bank-governance)
+1. On huggingface.co choose **New Space**. Name it, pick **Docker** and then **Blank**, keep the free CPU and make it public.
+2. In the new Space choose **Files**, then **Add file**, then **Upload files**, and upload the two files in the [`deploy/huggingface`](deploy/huggingface) folder: `Dockerfile` and `README.md`.
+3. Wait a few minutes for the build. The demo is then at `https://YOUR-NAME-SPACE-NAME.hf.space`.
 
-The button opens Render, reads `render.yaml` from this repository and builds the app. You need a free Render account and nothing else: no API key and no database. The first page load after a quiet period can take up to a minute, because free services go to sleep when nobody uses them.
+The Dockerfile downloads this repository from GitHub when it builds, so the demo always matches the code here. After you push a change, choose **Settings** and then **Factory rebuild** in the Space to update it.
 
-The online copy runs in demo mode (`GOVERNANCE_DEMO=1`). The AI suggestions and the Claude Code capture are switched off, whatever else is configured, so nobody can spend an API key or store text through it. Cases that visitors save are shared by everyone and are lost when the service restarts. At most 300 can be stored at a time, and the page says that it is a demo. Use made-up information only. Details are in [privacy notes](docs/PRIVACY.md).
+The online copy runs in demo mode (`GOVERNANCE_DEMO=1`). The AI suggestions and the Claude Code capture are switched off, whatever else is configured, so nobody can spend an API key or store text through it. Cases that visitors save are shared by everyone and are lost when the Space restarts. At most 300 can be stored at a time, and the page says that it is a demo. A free Space goes to sleep when nobody uses it, so the first load can take a minute. Use made-up information only. Details are in [privacy notes](docs/PRIVACY.md).
 
 ## What you can do
 

@@ -7,7 +7,7 @@ PUBLIC = 'demo.example.com'
 @pytest.fixture
 def demo(tmp_path, monkeypatch):
     monkeypatch.setenv('GOVERNANCE_DEMO', '1')
-    monkeypatch.setenv('GOVERNANCE_ALLOWED_HOSTS', PUBLIC)
+    monkeypatch.setenv('GOVERNANCE_ALLOWED_HOSTS', PUBLIC + ',.hf.space')
     monkeypatch.setenv('ENABLE_LIVE_CLASSIFICATION', '1')
     monkeypatch.setenv('GENAI_EVENT_DB', str(tmp_path / 'events.sqlite'))
     return TestClient(create_app(tmp_path / 'register.sqlite'), base_url='https://' + PUBLIC)
@@ -39,12 +39,23 @@ def test_demo_switches_ai_and_capture_off_even_if_configured(demo):
     assert demo.get('/api/captured').json()['enabled'] is False
     assert demo.post('/api/captured/classify', headers={'x-workspace-token': tok}).status_code == 409
 
-def test_https_origin_behind_proxy_is_accepted(demo):
+def test_domain_suffix_entry_allows_subdomains_only(demo):
+    assert demo.get('/api/bootstrap', headers={'host': 'someone-demo.hf.space'}).status_code == 200
+    assert demo.get('/api/bootstrap', headers={'host': 'evilhf.space'}).status_code == 403
+    assert demo.get('/api/bootstrap', headers={'host': 'hf.space.evil.com'}).status_code == 403
+
+def test_origin_must_match_host_behind_a_proxy(demo):
     tok = token(demo)
-    r = demo.post('/api/assess', json={'case': {}}, headers={'x-workspace-token': tok, 'origin': 'https://' + PUBLIC, 'x-forwarded-proto': 'https'})
-    assert r.status_code == 200
-    r = demo.post('/api/assess', json={'case': {}}, headers={'x-workspace-token': tok, 'origin': 'https://other.example.org', 'x-forwarded-proto': 'https'})
-    assert r.status_code == 403
+    ok = demo.post('/api/assess', json={'case': {}}, headers={'x-workspace-token': tok, 'origin': 'https://' + PUBLIC})
+    assert ok.status_code == 200
+    bad = demo.post('/api/assess', json={'case': {}}, headers={'x-workspace-token': tok, 'origin': 'https://other.example.org'})
+    assert bad.status_code == 403
+
+def test_demo_may_be_framed_only_by_hugging_face(demo, tmp_path, monkeypatch):
+    assert 'https://huggingface.co' in demo.get('/api/bootstrap').headers['content-security-policy']
+    monkeypatch.delenv('GOVERNANCE_DEMO')
+    local = TestClient(create_app(tmp_path / 'r2.sqlite'))
+    assert "frame-ancestors 'none'" in local.get('/api/bootstrap').headers['content-security-policy']
 
 def test_demo_register_is_capped(demo, monkeypatch):
     import app as module

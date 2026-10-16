@@ -10,7 +10,7 @@ Record names, owner/reviewer fields and review notes are always retained. Descri
 
 ## Public demo mode
 
-`GOVERNANCE_DEMO=1` is for a throwaway copy online, deployed with `render.yaml`. In this mode the app also accepts the host names in `GOVERNANCE_ALLOWED_HOSTS` and `RENDER_EXTERNAL_HOSTNAME`, and nothing else. Live AI classification and prompt capture are off even if their settings are present. Every visitor sees the same register, it lives in a temporary file that is lost when the service restarts, and it stops accepting new cases at 300. There is still no login, so the demo must only ever hold made-up information, and the page says so. Do not set `GOVERNANCE_DEMO=1` for real use.
+`GOVERNANCE_DEMO=1` is for a throwaway copy online, built with the files in `deploy/huggingface`. In this mode the app also accepts the host names in `GOVERNANCE_ALLOWED_HOSTS` and the one in `SPACE_HOST`, and nothing else. An entry that starts with a dot allows that domain and its subdomains. Because a hosting proxy hides the original scheme, the origin check compares the host name only, and the page may be shown inside a frame on huggingface.co. Live AI classification and prompt capture are off even if their settings are present. Every visitor sees the same register, it lives in a temporary file that is lost when the Space restarts, and it stops accepting new cases at 300. There is still no login, so the demo must only ever hold made-up information, and the page says so. Do not set `GOVERNANCE_DEMO=1` for real use.
 
 ## The old logger is not preserved
 
