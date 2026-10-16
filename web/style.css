@@ -822,3 +822,14 @@ button.link{background:none;border:0;padding:0;color:var(--accent);text-decorati
 .capture-off{margin:14px 0 4px}
 .capture .flow{margin:14px 0}
 .capture h3{font-size:13px;margin:14px 0 8px}
+
+.demo-banner {
+  background: #fff4d6;
+  border-bottom: 1px solid #e3c870;
+  color: #4a3a05;
+  font-size: 0.9rem;
+  padding: 8px 16px;
+}
+.demo-banner[hidden] {
+  display: none;
+}

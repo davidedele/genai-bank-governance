@@ -25,6 +25,16 @@ python app.py
 
 Then open **http://127.0.0.1:8501**. Press `Ctrl+C` in the terminal to stop it. On Windows, activate the environment with `.venv\Scripts\activate`.
 
+## Try it online
+
+You can put your own copy of the app online for free, so that anyone can try it in the browser without installing anything.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/davidedele/genai-bank-governance)
+
+The button opens Render, reads `render.yaml` from this repository and builds the app. You need a free Render account and nothing else: no API key and no database. The first page load after a quiet period can take up to a minute, because free services go to sleep when nobody uses them.
+
+The online copy runs in demo mode (`GOVERNANCE_DEMO=1`). The AI suggestions and the Claude Code capture are switched off, whatever else is configured, so nobody can spend an API key or store text through it. Cases that visitors save are shared by everyone and are lost when the service restarts. At most 300 can be stored at a time, and the page says that it is a demo. Use made-up information only. Details are in [privacy notes](docs/PRIVACY.md).
+
 ## What you can do
 
 1. Start from an empty use case or from one of the made-up examples.
@@ -110,7 +120,7 @@ More in the [verification record](docs/VERIFICATION.md), the [dataset card](docs
 
 ## Privacy and limits
 
-Run it only on your own computer, with made-up or properly authorized data. Records go into a local SQLite file. The description text and model excerpts are not stored unless you choose to keep them, but names, owners, reviewers and notes always are, so keep sensitive details out of those too.
+Run it on your own computer, with made-up or properly authorized data. The online demo is meant for made-up information only. Records go into a local SQLite file. The description text and model excerpts are not stored unless you choose to keep them, but names, owners, reviewers and notes always are, so keep sensitive details out of those too.
 
 There is no login, no encryption of the saved file and no tamper-proof history, and nothing here replaces a real approval process. See [privacy notes](docs/PRIVACY.md).
 

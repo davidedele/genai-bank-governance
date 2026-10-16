@@ -22,6 +22,23 @@ from demo_examples import examples, lookalike_pairs
 from eval.cases import CASES
 from auto_log import read_metadata_events, read_captured_prompts, delete_captured_prompts, default_event_db, capture_in_use
 ROOT = Path(__file__).resolve().parent
+LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1', 'testserver'}
+DEMO_MAX_RECORDS = 300
+
+def demo_mode():
+    """Public demo: no AI calls, no prompt capture, a capped shared register."""
+    return os.environ.get('GOVERNANCE_DEMO', '0') == '1'
+
+def allowed_hosts():
+    """Local names, plus the public host names named in the environment (demo only)."""
+    hosts = set(LOCAL_HOSTS)
+    if demo_mode():
+        extra = os.environ.get('GOVERNANCE_ALLOWED_HOSTS', '') + ',' + os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
+        hosts |= {h.strip().lower() for h in extra.split(',') if h.strip()}
+    return hosts
+
+def live_enabled():
+    return not demo_mode() and os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') == '1'
 
 class AssessRequest(BaseModel):
     case: dict
@@ -63,10 +80,13 @@ def create_app(db_path: Path | None=None):
     async def boundary(request: Request, call_next):
         host = request.headers.get('host', '')
         hostname = urlparse('http://' + host).hostname
-        if hostname not in {'localhost', '127.0.0.1', '::1', 'testserver'}:
+        if request.url.path == '/healthz':
+            return JSONResponse({'ok': True})
+        if hostname not in allowed_hosts():
             return JSONResponse({'detail': 'This workspace accepts local hosts only.'}, status_code=403)
         origin = request.headers.get('origin')
-        if origin and origin != f'{request.url.scheme}://{host}':
+        scheme = request.headers.get('x-forwarded-proto', request.url.scheme) if demo_mode() else request.url.scheme
+        if origin and origin != f'{scheme}://{host}':
             return JSONResponse({'detail': 'Cross-origin requests are not accepted.'}, status_code=403)
         if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
             supplied = request.headers.get('x-workspace-token', '')
@@ -97,14 +117,14 @@ def create_app(db_path: Path | None=None):
 
     @application.get('/api/bootstrap')
     def bootstrap():
-        live = os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') == '1'
+        live = live_enabled()
         provider = model = None
         try:
             provider = current_provider_id()
             model = current_model(provider)
         except ProviderError:
             pass
-        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'lookalikes': [{**p, 'a': {**p['a'], 'assessment': assess_use_case(p['a']['case'])}, 'b': {**p['b'], 'assessment': assess_use_case(p['b']['case'])}} for p in lookalike_pairs()], 'live_enabled': live, 'provider': provider, 'model': model, 'daily_limit': daily_limit_from_env(), 'benchmark': {'prompts': len(CASES), 'scenarios': len({c['scenario_id'] for c in CASES})}}
+        return {'token': token, 'version': APP_VERSION, 'unknown': UNKNOWN, 'dimensions': DIMENSIONS, 'approval_options': APPROVAL_OPTIONS, 'forms': FORMS_OF_USE, 'risks': RISK_AREAS, 'examples': [{**e, 'assessment': assess_use_case(e['case'])} for e in examples()], 'policy_version': load_policy()['version'], 'lookalikes': [{**p, 'a': {**p['a'], 'assessment': assess_use_case(p['a']['case'])}, 'b': {**p['b'], 'assessment': assess_use_case(p['b']['case'])}} for p in lookalike_pairs()], 'live_enabled': live, 'demo': demo_mode(), 'provider': provider, 'model': model, 'daily_limit': daily_limit_from_env(), 'benchmark': {'prompts': len(CASES), 'scenarios': len({c['scenario_id'] for c in CASES})}}
 
     @application.post('/api/assess')
     def assess(body: AssessRequest):
@@ -114,8 +134,8 @@ def create_app(db_path: Path | None=None):
     def classify(body: ClassifyRequest):
         if not body.confirm_external_processing:
             raise HTTPException(400, 'Explicit confirmation of external processing is required.')
-        if os.environ.get('ENABLE_LIVE_CLASSIFICATION', '0') != '1':
-            raise HTTPException(403, 'Live classification is disabled in local configuration.')
+        if not live_enabled():
+            raise HTTPException(403, 'Live classification is disabled in this configuration.')
         try:
             store.reserve_api_attempt(daily_limit_from_env())
             case, meta = classify_with_metadata(body.description)
@@ -133,6 +153,8 @@ def create_app(db_path: Path | None=None):
     def save(body: SaveRequest):
         if not body.confirm_review:
             raise HTTPException(400, 'Confirm that you reviewed the recorded characteristics.')
+        if demo_mode() and len(store.list()) >= DEMO_MAX_RECORDS:
+            raise HTTPException(429, 'The demo register is full. It is cleared regularly, so try again later.')
         original = None
         provenance = {'source': 'manual'}
         if body.classification_id:
@@ -155,13 +177,13 @@ def create_app(db_path: Path | None=None):
     @application.get('/api/events')
     def metadata_events():
         filename = os.environ.get('GENAI_EVENT_DB', '')
-        enabled = os.environ.get('GENAI_LOG_METADATA') == '1' and bool(filename)
+        enabled = os.environ.get('GENAI_LOG_METADATA') == '1' and bool(filename) and not demo_mode()
         return {'enabled': enabled, 'events': read_metadata_events(Path(filename)) if enabled else [], 'note': 'Prompt-event metadata only; these events are not classified use cases or proof of review.'}
 
     def capture_settings():
         """The plugin's file: GENAI_EVENT_DB, or the same default folder the plugin uses."""
         path = Path(os.environ.get('GENAI_EVENT_DB') or default_event_db())
-        return capture_in_use(path), path
+        return (False if demo_mode() else capture_in_use(path)), path
 
     @application.get('/api/captured')
     def captured():
@@ -220,4 +242,8 @@ if __name__ == '__main__':
     from dotenv import load_dotenv
     import uvicorn
     load_dotenv(ROOT / '.env', override=False)
-    uvicorn.run(create_app(), host='127.0.0.1', port=8501, access_log=False)
+    if demo_mode():
+        # Hosting platforms give the port in PORT and need the server reachable from outside.
+        uvicorn.run(create_app(), host='0.0.0.0', port=int(os.environ.get('PORT', '8501')), access_log=False)
+    else:
+        uvicorn.run(create_app(), host='127.0.0.1', port=8501, access_log=False)

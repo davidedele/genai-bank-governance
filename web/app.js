@@ -145,7 +145,11 @@ const ENV_SNIPPET='ENABLE_LIVE_CLASSIFICATION=1\nLLM_PROVIDER=openai\nLLM_MODEL=
 function openAiDialog(){
   const body=[];
   body.push(el('p',{},'On the Assess page, an AI model can read your description of what an employee did and suggest the answers to the questions. You always check the answers yourself, and the fixed rules (not the AI) decide the result.'));
-  if(!boot.live_enabled){
+  if(boot.demo){
+    body.push(el('div',{class:'modal-state off'},'Right now: off in the public demo'),
+      el('p',{},'This is a public demo, so the AI is switched off. Nothing you type is sent to an AI provider, and you answer the questions yourself. The rules that produce the outcome work exactly as in the full version.'),
+      el('p',{},'To try the AI suggestions, run the project on your own computer. The steps are in the README on GitHub.'));
+  }else if(!boot.live_enabled){
     const pre=el('pre',{},ENV_SNIPPET);
     const copy=el('button',{type:'button',class:'secondary button-small'},'Copy these lines');
     copy.addEventListener('click',()=>copyText(ENV_SNIPPET,copy));
@@ -548,6 +552,7 @@ function ago(ts){
 const CAPTURE_STATUS={pending:['Waiting','todo'],classifying:['Working','todo'],classified:['Ready to review','ok'],failed:['Could not suggest answers','todo']};
 const CAPTURE_FLOW=[['You prompt Claude Code','Work as usual.'],['It is saved here','On this computer only.'],['Claude Code suggests answers','In the background.'],['You review and save','Only then it is a use case.']];
 async function captureSection(root){
+  if(boot.demo)return;
   let data;
   try{data=await api('/api/captured');}catch(e){return;}
   const box=el('div',{class:'panel capture'});
@@ -733,6 +738,7 @@ api('/api/bootstrap').then(data=>{
   $('version').textContent='v'+boot.version;
   updatePill();
   $('mode-label').addEventListener('click',openAiDialog);
+  if(boot.demo)$('demo-banner').hidden=false;
   show('overview');
 }
 ).catch(e=>notice('Could not start the workspace: '+e.message,true));

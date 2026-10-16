@@ -1,5 +1,9 @@
 # Change log
 
+## Unreleased
+
+- Added a public demo mode (`GOVERNANCE_DEMO=1`) with a `render.yaml` blueprint and a deploy button. It turns off AI suggestions and prompt capture, accepts only the named public host, caps the shared register and shows a demo notice.
+
 ## 0.2.0 - 2026-10-15
 
 - Added an optional Claude Code plugin mode that saves prompts locally, lets Claude Code suggest answers in the background, lists them under Captured prompts in the Register, and adds a read-only skill for looking up saved reviews.

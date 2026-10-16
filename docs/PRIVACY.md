@@ -8,6 +8,10 @@ Live classification is off until `ENABLE_LIVE_CLASSIFICATION=1`, and the interfa
 
 Record names, owner/reviewer fields and review notes are always retained. Description, rationale and evidence excerpts are retained only when selected. Do not enter customer information or secrets, including in names and notes. Pending extraction data resides in process memory, with count-bounded storage and expiry cleanup during subsequent operations; restart the app to release the process. There is no encryption at rest or secure-memory-erasure claim.
 
+## Public demo mode
+
+`GOVERNANCE_DEMO=1` is for a throwaway copy online, deployed with `render.yaml`. In this mode the app also accepts the host names in `GOVERNANCE_ALLOWED_HOSTS` and `RENDER_EXTERNAL_HOSTNAME`, and nothing else. Live AI classification and prompt capture are off even if their settings are present. Every visitor sees the same register, it lives in a temporary file that is lost when the service restarts, and it stops accepting new cases at 300. There is still no login, so the demo must only ever hold made-up information, and the page says so. Do not set `GOVERNANCE_DEMO=1` for real use.
+
 ## The old logger is not preserved
 
 The previous hook recorded raw prompts and sent them for background classification after submission. That created an additional sensitive-content store and processing path without preventing the original action. Its in-memory/update logic was also a poor basis for durable concurrent records.
