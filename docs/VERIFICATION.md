@@ -1,5 +1,7 @@
 # Verification record - 15 October 2026
 
+This record is a snapshot of version 0.2.0 on the date above. The test suite has grown since, and the current count is in the README.
+
 Baseline: the supplied source at commit `86acc191419f109ea131a80b7e011607dc69a6d1`. Its 28 existing Python tests passed before modification.
 
 ## Executed locally

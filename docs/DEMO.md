@@ -24,4 +24,4 @@ Suggested topics:
 
 The README now embeds real interface screenshots. The screenshots contain synthetic records and no live-model results. Use `overview-desktop.png` for the primary project preview, followed by `assessment-desktop.png`. `overview-mobile.png` documents the responsive layout rather than a separate mobile product.
 
-Do not present this localhost application as a public live demo. A screen recording or static screenshots are sufficient for a portfolio without exposing an unauthenticated register.
+The live demo on GitHub Pages is safe to show and share. It runs in the visitor's browser, so nothing is sent to a server and there is no shared register. Present the local app, which has the optional AI suggestions and the Claude Code capture, only on your own computer, never as a public service.

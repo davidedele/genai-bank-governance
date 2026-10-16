@@ -96,7 +96,7 @@ Use `0` for no limit. One suggestion can involve up to three requests to the pro
 
 ## What I tested, and what I did not
 
-There are 128 automated tests covering the rules, the API, the saved revisions and the exports. One of them walks through all 1,440 valid combinations of answers to check that the rules behave consistently. That is a check on the rules, not an evaluation of any model.
+There are more than 150 automated tests covering the rules, the API, the saved revisions, the exports, the optional capture and the demo build. One of them walks through all 1,440 valid combinations of answers to check that the rules behave consistently. That is a check on the rules, not an evaluation of any model.
 
 There is also a set of 64 made-up descriptions covering 24 scenarios, for comparing model suggestions with the expected answers. I wrote the labels myself and no bank professional has reviewed them, so I do not claim any accuracy for a live model or any effect in a real bank.
 
