@@ -18,3 +18,4 @@ jobs:
       - run: python -m pytest -q
       - run: python -m eval.run_eval --validate-only
       - run: python scripts/check_package.py
+      - run: python scripts/build_pages.py _site

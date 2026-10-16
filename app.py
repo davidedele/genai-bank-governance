@@ -31,13 +31,13 @@ def demo_mode():
 
 def host_allowed(hostname):
     """Local names always; in demo mode also the public host names named in the environment.
-    An entry starting with a dot, such as .hf.space, allows that domain and its subdomains."""
+    An entry starting with a dot, such as .example.com, allows that domain and its subdomains."""
     hostname = (hostname or '').lower()
     if hostname in LOCAL_HOSTS:
         return True
     if not demo_mode():
         return False
-    extra = os.environ.get('GOVERNANCE_ALLOWED_HOSTS', '') + ',' + os.environ.get('SPACE_HOST', '')
+    extra = os.environ.get('GOVERNANCE_ALLOWED_HOSTS', '')
     for entry in (h.strip().lower() for h in extra.split(',') if h.strip()):
         if hostname == entry or (entry.startswith('.') and hostname.endswith(entry)):
             return True
@@ -108,8 +108,7 @@ def create_app(db_path: Path | None=None):
             if length > 64000:
                 return JSONResponse({'detail': 'Request exceeds the local input limit.'}, status_code=413)
         response = await call_next(request)
-        frame_ancestors = 'https://huggingface.co https://*.hf.space' if demo_mode() else "'none'"
-        response.headers['Content-Security-Policy'] = f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors {frame_ancestors}; base-uri 'none'; form-action 'self'"
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'

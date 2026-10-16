@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Added a public demo mode (`GOVERNANCE_DEMO=1`) with a Dockerfile for a free Hugging Face Space. It turns off AI suggestions and prompt capture, accepts only the named public hosts, caps the shared register and shows a demo notice.
+- Added a live demo on GitHub Pages. The real app runs in the visitor's browser through Pyodide, so there is no server, no account and no cost, and GitHub rebuilds it on every push (`scripts/build_pages.py`, `.github/workflows/pages.yml`).
+- Added an optional server demo mode (`GOVERNANCE_DEMO=1`) that turns off AI suggestions and prompt capture, accepts only named host names, caps the shared register and shows a demo notice.
 
 ## 0.2.0 - 2026-10-15
 

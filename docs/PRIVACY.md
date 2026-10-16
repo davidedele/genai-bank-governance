@@ -8,9 +8,11 @@ Live classification is off until `ENABLE_LIVE_CLASSIFICATION=1`, and the interfa
 
 Record names, owner/reviewer fields and review notes are always retained. Description, rationale and evidence excerpts are retained only when selected. Do not enter customer information or secrets, including in names and notes. Pending extraction data resides in process memory, with count-bounded storage and expiry cleanup during subsequent operations; restart the app to release the process. There is no encryption at rest or secure-memory-erasure claim.
 
-## Public demo mode
+## Public demo
 
-`GOVERNANCE_DEMO=1` is for a throwaway copy online, built with the files in `deploy/huggingface`. In this mode the app also accepts the host names in `GOVERNANCE_ALLOWED_HOSTS` and the one in `SPACE_HOST`, and nothing else. An entry that starts with a dot allows that domain and its subdomains. Because a hosting proxy hides the original scheme, the origin check compares the host name only, and the page may be shown inside a frame on huggingface.co. Live AI classification and prompt capture are off even if their settings are present. Every visitor sees the same register, it lives in a temporary file that is lost when the Space restarts, and it stops accepting new cases at 300. There is still no login, so the demo must only ever hold made-up information, and the page says so. Do not set `GOVERNANCE_DEMO=1` for real use.
+The live demo on GitHub Pages is built by `scripts/build_pages.py`. The page downloads a Python runtime (Pyodide, from the jsDelivr network) and runs the app inside the visitor's browser. Nothing a visitor types is sent to a server of mine. Saved cases live in the browser's memory and are lost when the page is closed or reloaded. Live AI classification and prompt capture are off. The only request the page makes to a third party is the download of the runtime, which exposes the visitor's address to that network like any other website that loads code from it.
+
+Anyone who wants to run the same code on a server can set `GOVERNANCE_DEMO=1`. That mode switches off AI suggestions and prompt capture, accepts only the host names in `GOVERNANCE_ALLOWED_HOSTS` (an entry that starts with a dot allows that domain and its subdomains), compares only the host name of the origin because a hosting proxy hides the scheme, and stops accepting new cases at 300. Every visitor then sees the same register. There is still no login, so such a copy must only ever hold made-up information. Do not set `GOVERNANCE_DEMO=1` for real use.
 
 ## The old logger is not preserved
 

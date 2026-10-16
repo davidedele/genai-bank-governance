@@ -833,3 +833,18 @@ button.link{background:none;border:0;padding:0;color:var(--accent);text-decorati
 .demo-banner[hidden] {
   display: none;
 }
+.demo-loading {
+  background: #eef3fb;
+  border-bottom: 1px solid #b9c8e3;
+  color: #1c3358;
+  font-size: 0.9rem;
+  padding: 8px 16px;
+}
+.demo-loading[hidden] {
+  display: none;
+}
+.demo-loading.failed {
+  background: #fdeceb;
+  border-color: #e3a29d;
+  color: #6b1c15;
+}
