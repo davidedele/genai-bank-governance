@@ -31,6 +31,8 @@ Then open **http://127.0.0.1:8501**. Press `Ctrl+C` in the terminal to stop it. 
 
 The demo is the real app, not a mock-up. The Python code runs inside your browser through [Pyodide](https://pyodide.org), so nothing you type is sent to a server, and the saved cases are lost when you close or reload the page. The first visit takes up to half a minute because the Python runtime is downloaded to your browser. The AI suggestions and the Claude Code capture are switched off in it. Use made-up information only.
 
+![The live demo, running in the browser](docs/images/live-demo.png)
+
 GitHub rebuilds the demo every time I push to `main` (see `.github/workflows/pages.yml`). To publish your own copy of it, fork the repository, open **Settings**, then **Pages**, and set **Source** to **GitHub Actions**.
 
 ## What you can do
