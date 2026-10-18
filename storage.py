@@ -45,6 +45,7 @@ class Store:
         return c
 
     def save(self, *, name: str, owner: str, reviewer: str, case: dict, prediction: dict | None=None, provenance: dict | None=None, description: str='', retain_description: bool=False, parent_id: str | None=None, review_note: str='', policy: dict | None=None) -> dict:
+        parent_id = parent_id or None  # an empty string must not reach the foreign key
         for label, text, limit in [('Name', name, 160), ('Owner', owner, 120), ('Reviewer', reviewer, 120)]:
             if not isinstance(text, str) or not text.strip() or len(text) > limit:
                 raise ValueError(f'{label} is required and must be at most {limit} characters.')

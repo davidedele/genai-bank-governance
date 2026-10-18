@@ -164,7 +164,11 @@ def test_lookup_skill_never_returns_owner_or_notes(tmp_path):
     assert 'SECRET' not in out.stdout
     none = subprocess.run([sys.executable, str(LOOKUP), 'nothing-like-this'], capture_output=True, text=True, env=env)
     assert 'No saved reviews match' in none.stdout
-    unset = subprocess.run([sys.executable, str(LOOKUP)], capture_output=True, text=True, env={k: v for k, v in os.environ.items() if k != 'GOVERNANCE_DB_PATH'})
+    # Run a copy outside the project, so that a register you saved by using the app cannot be found beside it.
+    lonely = tmp_path / 'lonely' / 'claude-plugin' / 'genai-usage-logger' / 'skills' / 'governance-register'
+    lonely.mkdir(parents=True)
+    (lonely / 'lookup_register.py').write_text(LOOKUP.read_text())
+    unset = subprocess.run([sys.executable, str(lonely / 'lookup_register.py')], capture_output=True, text=True, env={k: v for k, v in os.environ.items() if k != 'GOVERNANCE_DB_PATH'})
     assert unset.returncode == 1 and 'GOVERNANCE_DB_PATH' in unset.stdout
 
 def test_plugin_files_are_consistent():

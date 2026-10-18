@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed saving with an empty parent identifier, which crashed the server instead of saving a new case.
+- Closed a gap in the request size limit: chunked uploads had no declared length and were accepted at any size. They are now refused with a clear error.
+- Made the tests independent of the machine they run on. A setting in your shell, a saved register or captured prompts could previously make three of them fail.
+- Fixed the heading order and landmarks reported by an accessibility scan, and made the wording of the demo honest about where saved cases live.
+
 - Added a live demo on GitHub Pages. The real app runs in the visitor's browser through Pyodide, so there is no server, no account and no cost, and GitHub rebuilds it on every push (`scripts/build_pages.py`, `.github/workflows/pages.yml`).
 - Added an optional server demo mode (`GOVERNANCE_DEMO=1`) that turns off AI suggestions and prompt capture, accepts only named host names, caps the shared register and shows a demo notice.
 

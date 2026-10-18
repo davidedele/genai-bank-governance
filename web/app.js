@@ -226,7 +226,7 @@ function pairCard(side){
 function pairSlide(pair,index,total){
   const changes=CHANGE_FIELDS.filter(f=>pair.a.case[f]!==pair.b.case[f]);
   return el('div',{class:'pair-slide',role:'group','aria-roledescription':'slide','aria-label':(index+1)+' of '+total},
-    el('h3',{},pair.title),
+    el('h3',{'aria-level':'2'},pair.title),
     pairCard(pair.a),
     el('div',{class:'pair-change'},changes.map(f=>el('p',{},el('strong',{},fieldLabel(f)),' changes from ',pair.a.case[f],' to ',pair.b.case[f],'.'))),
     pairCard(pair.b));
@@ -488,7 +488,7 @@ async function renderRegister(){
         holder.append(el('div',{class:'panel register-empty'},el('h3',{},'Want to see how it works? Try this:'),
           flow([['Open an example','It fills in the questions for you.'],['Look at the result','It shows the risks and controls on the right.'],['Save it','Add an owner and a reviewer, tick the box and press Save review. It then appears here.']]),
           el('div',{class:'actions'},button('Try an example',()=>newAssessment(boot.examples[0]),true),button('Start from scratch',()=>newAssessment())),
-          el('p',{class:'hint'},'Everything you save stays in a file on this computer.')));
+          el('p',{class:'hint'},boot.demo?'Saved cases stay in this browser tab until you close or reload it.':'Everything you save stays in a file on this computer.')));
       }
       return;
     }
@@ -673,8 +673,7 @@ function renderFramework(){
   ,d.name),el('span',{
   }
   ,d.question))));
-  root.append(formPanel,dimPanel,panel(el('h3',{
-  }
+  root.append(formPanel,dimPanel,panel(el('h3',{'aria-level':'2'}
   ,'What the software adds'),el('p',{
     class:'quiet'
   }
@@ -738,7 +737,7 @@ api('/api/bootstrap').then(data=>{
   $('version').textContent='v'+boot.version;
   updatePill();
   $('mode-label').addEventListener('click',openAiDialog);
-  if(boot.demo)$('demo-banner').hidden=false;
+  if(boot.demo){$('demo-banner').hidden=false;$('workspace-note').textContent='Demo workspace';}
   show('overview');
 }
 ).catch(e=>notice('Could not start the workspace: '+e.message,true));

@@ -36,7 +36,7 @@ def build(out: Path, pyodide_url: str = PYODIDE) -> None:
     assert BANNER_OLD in page
     page = page.replace(BANNER_OLD, BANNER_NEW)
     config = json.dumps({'pyodideUrl': pyodide_url, 'pyBase': 'py/'})
-    page = page.replace('<main id="main"', '<div id="demo-loading" class="demo-loading">Loading the demo.</div><main id="main"', 1)
+    page = page.replace('<main id="main"', '<div id="demo-loading" class="demo-loading" role="status">Loading the demo.</div><main id="main"', 1)
     page = page.replace('<script src="static/app.js" defer></script>', f'<script>window.DEMO_CONFIG={config};</script><script src="static/runtime.js"></script><script src="static/app.js" defer></script>', 1)
     assert 'runtime.js' in page and 'demo-loading' in page
     page = page.replace('</head>', '<link rel="icon" href="data:,"></head>', 1)

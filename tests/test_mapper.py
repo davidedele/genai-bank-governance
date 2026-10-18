@@ -2,7 +2,7 @@ import itertools
 import pytest
 from data.framework import DIMENSIONS, ILLUSTRATIVE_USE_CASES
 from demo_examples import BASE
-from schema import UNKNOWN, normalize_case, ValidationError
+from schema import UNKNOWN, ValidationError
 from mapper import assess_use_case, load_policy, validate_policy
 from eval.cases import CASES
 

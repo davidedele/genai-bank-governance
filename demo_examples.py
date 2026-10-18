@@ -19,7 +19,6 @@ def _variant(name, description, **changes):
 
 def lookalike_pairs():
     """Pairs of made-up activities that read alike but differ in one detail the policy cares about."""
-    reviewed = 'Initial draft, reviewed and revised by the employee'
     return [
         {'id': 'information', 'title': 'Same assistant. Same task. Same careful review.',
          'a': _variant('Summarizing a public report', 'an approved enterprise assistant summarizes a public report for internal awareness.'),

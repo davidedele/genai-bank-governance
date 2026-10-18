@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from app import create_app, DEMO_MAX_RECORDS
+from app import create_app
 
 PUBLIC = 'demo.example.com'
 

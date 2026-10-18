@@ -96,6 +96,9 @@ def create_app(db_path: Path | None=None):
         if origin and not same_origin:
             return JSONResponse({'detail': 'Cross-origin requests are not accepted.'}, status_code=403)
         if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            if request.headers.get('transfer-encoding'):
+                # A chunked body has no declared length, so the size limit below could not apply to it.
+                return JSONResponse({'detail': 'Chunked uploads are not accepted.'}, status_code=411)
             supplied = request.headers.get('x-workspace-token', '')
             if not secrets.compare_digest(supplied, token):
                 return JSONResponse({'detail': 'Reload the workspace before submitting.'}, status_code=403)
