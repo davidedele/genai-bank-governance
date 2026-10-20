@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rewrote the README for readers who skim: the idea in one minute, the reasoning behind the design, the link from the thesis to the software, a full section on the Claude Code plugin, a facts table and a summary of the engineering checks.
+
 ## 0.3.0 - 2026-10-20
 
 - The live demo now serves its own Python runtime instead of loading it from a public network. The build downloads the official Pyodide release, checks it against a fixed SHA-256 value and ships only the files the demo needs (about 16 MB), so the page contacts no third party (`scripts/fetch_pyodide.py`).
