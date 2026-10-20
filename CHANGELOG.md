@@ -9,7 +9,7 @@
 - The background Claude Code run that suggests answers for captured prompts now starts with no tools and no MCP servers, so a captured prompt can never make it do more than answer.
 - Malformed Host headers and non-ASCII workspace tokens now get a clean refusal instead of a server error, and validation errors no longer echo the submitted value, which fixed a server error on a JSON body containing NaN.
 - The demo page carries a content security policy that allows only its own site, and its start-up settings moved out of an inline script. The runtime archive is unpacked with a check that refuses links and paths outside the target folder.
-- Added Dependabot updates for the workflow actions and the Python requirements, and narrowed the permissions of the demo workflow.
+- Narrowed the permissions of the demo workflow.
 - Added a short "What this shows" section, status badges and a short recording of the demo to the README, and refreshed the screenshots for this version.
 - Fixed saving with an empty parent identifier, which crashed the server instead of saving a new case.
 - Closed a gap in the request size limit: chunked uploads had no declared length and were accepted at any size. They are now refused with a clear error.
