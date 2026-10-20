@@ -91,6 +91,8 @@ def test_classification_uses_claude_code_without_leaking_text_into_arguments(tmp
     assert 'Summarise client file X' in call['stdin']
     assert all('Summarise client file X' not in a for a in call['args'])
     assert '--json-schema' in call['args'] and 'json' in call['args']
+    args = call['args']
+    assert args[args.index('--tools') + 1] == '' and '--strict-mcp-config' in args, 'the background run must have no tools'
     item = read_captured_prompts(db)[0]
     assert item['status'] == 'classified' and item['title'] == 'Summarising a client file'
     assert item['case']['tool_access'] == 'Enterprise tool'

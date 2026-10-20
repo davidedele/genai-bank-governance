@@ -56,7 +56,8 @@ def finish(path: Path, prompt_id: str, status: str, classification, error: str |
 
 def run_claude(text: str):
     binary = os.environ.get('GENAI_CLAUDE_BIN') or shutil.which('claude') or 'claude'
-    command = [binary, '-p', INSTRUCTION, '--output-format', 'json', '--json-schema', json.dumps(SCHEMA)]
+    # No tools and no MCP servers: a captured prompt is untrusted text and must not be able to make this run do anything but answer.
+    command = [binary, '-p', INSTRUCTION, '--output-format', 'json', '--json-schema', json.dumps(SCHEMA), '--tools', '', '--strict-mcp-config']
     model = os.environ.get('GENAI_CLASSIFY_MODEL')
     if model:
         command += ['--model', model]

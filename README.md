@@ -1,5 +1,9 @@
 # GenAI Bank Governance
 
+[![Tests](https://github.com/davidedele/genai-bank-governance/actions/workflows/tests.yml/badge.svg)](https://github.com/davidedele/genai-bank-governance/actions/workflows/tests.yml)
+[![Live demo](https://img.shields.io/badge/live%20demo-open%20in%20browser-1c6b57)](https://davidedele.github.io/genai-bank-governance/)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab)
+
 **How should a bank review what employees actually do with generative AI, and not only which tools it approves?**
 
 I looked at this question in my bachelor's thesis at Bocconi, *The Use of Generative Artificial Intelligence in Banks: Governance, Risks, and Internal Controls* (2026). Once the research was done, I wanted to see what the framework would feel like as a working tool. This repository is that experiment.
@@ -9,6 +13,14 @@ You describe what an employee did with an AI tool, answer a few questions about 
 It is a research prototype with made-up examples. It is not a compliance product and it is not meant for real customer information.
 
 ![The overview, with a pair of look-alike examples that get different outcomes](docs/images/overview-desktop.png)
+
+## What this shows
+
+**The problem.** A bank can approve an AI tool and still face very different risks, because the risk depends on what an employee does with it. The same assistant summarizing a public report and summarizing a client file need different care.
+
+**What the register does.** It turns a description of a real use into the risks, controls and kind of review that apply, using readable rules that a person can check, and it keeps a dated record of every review.
+
+**What the benchmark measured.** Nothing about real banks yet. It is a set of 64 made-up descriptions with the answers I expect, built to test how often an AI suggestion agrees with them. I have not published a result, and the page says so.
 
 ## Run it
 
@@ -29,9 +41,9 @@ Then open **http://127.0.0.1:8501**. Press `Ctrl+C` in the terminal to stop it. 
 
 **[Open the live demo](https://davidedele.github.io/genai-bank-governance/)**. It needs no account and no installation.
 
-The demo is the real app, not a mock-up. The Python code runs inside your browser through [Pyodide](https://pyodide.org), so nothing you type is sent to a server, and the saved cases are lost when you close or reload the page. The first visit takes up to half a minute because the Python runtime is downloaded to your browser. The AI suggestions and the Claude Code capture are switched off in it. Use made-up information only.
+The demo is the real app, not a mock-up. The Python code runs inside your browser through [Pyodide](https://pyodide.org), so nothing you type is sent to a server, and the saved cases are lost when you close or reload the page. The overview opens at once. Answering, saving and exporting start when the Python runtime has been downloaded to your browser, which takes up to half a minute on the first visit. The runtime is a checked copy of Pyodide served from the same site, so the page does not contact any other server. The AI suggestions and the Claude Code capture are switched off in it. Use made-up information only.
 
-![The live demo, running in the browser](docs/images/live-demo.png)
+![A short recording of the live demo: a client file summary needs review, the same summary of public information needs only standard controls, then the review is saved to the register](docs/images/demo.gif)
 
 GitHub rebuilds the demo every time I push to `main` (see `.github/workflows/pages.yml`). To publish your own copy of it, fork the repository, open **Settings**, then **Pages**, and set **Source** to **GitHub Actions**.
 

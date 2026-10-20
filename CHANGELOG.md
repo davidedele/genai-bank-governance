@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-20
+
+- The live demo now serves its own Python runtime instead of loading it from a public network. The build downloads the official Pyodide release, checks it against a fixed SHA-256 value and ships only the files the demo needs (about 16 MB), so the page contacts no third party (`scripts/fetch_pyodide.py`).
+- The demo overview now opens at once. The start-up data is produced by the real app at build time and shown while Python downloads in the background. The downloads run side by side, and a status line shows steps 1 to 3 and what still waits.
+- The background Claude Code run that suggests answers for captured prompts now starts with no tools and no MCP servers, so a captured prompt can never make it do more than answer.
+- Malformed Host headers and non-ASCII workspace tokens now get a clean refusal instead of a server error, and validation errors no longer echo the submitted value, which fixed a server error on a JSON body containing NaN.
+- The demo page carries a content security policy that allows only its own site, and its start-up settings moved out of an inline script. The runtime archive is unpacked with a check that refuses links and paths outside the target folder.
+- Added Dependabot updates for the workflow actions and the Python requirements, and narrowed the permissions of the demo workflow.
+- Added a short "What this shows" section, status badges and a short recording of the demo to the README, and refreshed the screenshots for this version.
 - Fixed saving with an empty parent identifier, which crashed the server instead of saving a new case.
 - Closed a gap in the request size limit: chunked uploads had no declared length and were accepted at any size. They are now refused with a clear error.
 - Made the tests independent of the machine they run on. A setting in your shell, a saved register or captured prompts could previously make three of them fail.

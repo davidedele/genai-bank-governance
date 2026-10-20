@@ -17,3 +17,5 @@ data/auto_log.jsonl
 .coverage
 htmlcov/
 eval/results/local-*
+_site/
+_pyodide/

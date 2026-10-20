@@ -1,7 +1,7 @@
 """Classification contract. Unknown values are application extensions to the thesis."""
 from copy import deepcopy
 from data.framework import DIMENSIONS, FORMS_OF_USE
-APP_VERSION = '0.2.0'
+APP_VERSION = '0.3.0'
 SCHEMA_VERSION = '2.0'
 FRAMEWORK_VERSION = 'thesis-2026'
 UNKNOWN = 'Unknown - clarification required'

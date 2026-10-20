@@ -54,3 +54,24 @@ def test_hostile_values_never_cause_a_server_error(client, value):
 def test_odd_paths_are_refused_cleanly(client, path):
     r = client.get(path)
     assert r.status_code in (404, 405) and 'import' not in r.text
+
+@pytest.mark.parametrize('host', ['[::1]x', 'evil.com', 'localhost@evil.com', 'local host', ''])
+def test_malformed_or_foreign_hosts_get_a_clean_refusal(client, host):
+    assert client.get('/api/records', headers={'Host': host}).status_code == 403
+
+def test_a_non_ascii_token_is_refused_not_a_server_error(client):
+    token, case = boot(client)
+    r = client.post('/api/assess', json={'case': case}, headers={'x-workspace-token': 'caf\xe9'.encode('latin-1')})
+    assert r.status_code == 403
+
+@pytest.mark.parametrize('raw', ['{"case": NaN}', '{"case": Infinity}', '{"case": -Infinity}', '{"case": 1e999}'])
+def test_non_finite_numbers_get_a_validation_error_that_does_not_echo_them(client, raw):
+    token, _ = boot(client)
+    r = client.post('/api/assess', content=raw, headers={'x-workspace-token': token, 'content-type': 'application/json'})
+    assert r.status_code == 422
+    assert 'input' not in str(r.json()) and 'NaN' not in r.text and 'Infinity' not in r.text
+
+def test_validation_errors_never_echo_what_was_sent(client):
+    token, _ = boot(client)
+    r = client.post('/api/records', json={'name': 'SECRET-NAME-VALUE', 'owner': '', 'reviewer': 'r', 'case': {}, 'confirm_review': True}, headers={'x-workspace-token': token})
+    assert r.status_code == 422 and 'SECRET-NAME-VALUE' not in r.text

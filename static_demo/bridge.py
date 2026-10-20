@@ -4,8 +4,8 @@ import os
 import sys
 
 os.environ['GOVERNANCE_DEMO'] = '1'
-os.environ['GOVERNANCE_DB_PATH'] = '/tmp/register.sqlite'
-ROOT = '/home/pyodide/app'
+os.environ.setdefault('GOVERNANCE_DB_PATH', '/tmp/register.sqlite')  # nosec B108: the browser's in-memory file system, not a real /tmp
+ROOT = os.environ.get('DEMO_APP_ROOT', '/home/pyodide/app')  # the build sets this to read the start-up data
 os.makedirs(ROOT + '/web', exist_ok=True)  # the app mounts this folder; the browser serves the real files
 sys.path.insert(0, ROOT)
 

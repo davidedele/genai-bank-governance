@@ -60,7 +60,7 @@ Prompts can contain sensitive material. Do not switch this on for work where tha
 
 ## How the suggestions work
 
-For each saved prompt, a background process runs Claude Code in non-interactive mode (`claude -p`) with the prompt piped in as data, an instruction to ignore any instructions inside it, and a schema that only allows the answers in the workspace's framework. The process never blocks your prompt and is guarded so it cannot trigger the plugin again. The workspace checks every returned answer against the framework before showing it, and anything invalid is marked as failed.
+For each saved prompt, a background process runs Claude Code in non-interactive mode (`claude -p`) with the prompt piped in as data, an instruction to ignore any instructions inside it, no tools and no MCP servers, and a schema that only allows the answers in the workspace's framework. The process never blocks your prompt and is guarded so it cannot trigger the plugin again. The workspace checks every returned answer against the framework before showing it, and anything invalid is marked as failed.
 
 The suggestions use some of your Claude usage, which is why there is a daily limit. They are a starting point and can be wrong, so every answer needs checking before you save.
 

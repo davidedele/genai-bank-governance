@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -85,7 +86,10 @@ def create_app(db_path: Path | None=None):
     @application.middleware('http')
     async def boundary(request: Request, call_next):
         host = request.headers.get('host', '')
-        hostname = urlparse('http://' + host).hostname
+        try:
+            hostname = urlparse('http://' + host).hostname
+        except ValueError:  # a malformed host such as '[::1]x'
+            hostname = None
         if request.url.path == '/healthz':
             return JSONResponse({'ok': True})
         if not host_allowed(hostname):
@@ -100,7 +104,7 @@ def create_app(db_path: Path | None=None):
                 # A chunked body has no declared length, so the size limit below could not apply to it.
                 return JSONResponse({'detail': 'Chunked uploads are not accepted.'}, status_code=411)
             supplied = request.headers.get('x-workspace-token', '')
-            if not secrets.compare_digest(supplied, token):
+            if not secrets.compare_digest(supplied.encode('utf-8', 'replace'), token.encode()):
                 return JSONResponse({'detail': 'Reload the workspace before submitting.'}, status_code=403)
             try:
                 length = int(request.headers.get('content-length', '0'))
@@ -116,6 +120,11 @@ def create_app(db_path: Path | None=None):
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'
         return response
+
+    @application.exception_handler(RequestValidationError)
+    async def invalid_request(request, error):
+        # Only where and why, never the submitted value: it may not be valid JSON (NaN) and need not be echoed back.
+        return JSONResponse({'detail': [{'loc': [str(part) for part in e.get('loc', ())], 'msg': str(e.get('msg', 'Invalid value.'))} for e in error.errors()[:20]]}, status_code=422)
 
     @application.exception_handler(ValidationError)
     async def invalid_case(request, error):
@@ -253,7 +262,7 @@ if __name__ == '__main__':
     import uvicorn
     load_dotenv(ROOT / '.env', override=False)
     if demo_mode():
-        # Hosting platforms give the port in PORT and need the server reachable from outside.
-        uvicorn.run(create_app(), host='0.0.0.0', port=int(os.environ.get('PORT', '8501')), access_log=False)
+        # Hosting platforms give the port in PORT and need the server reachable from outside. The host check and the demo limits apply.
+        uvicorn.run(create_app(), host='0.0.0.0', port=int(os.environ.get('PORT', '8501')), access_log=False)  # nosec B104
     else:
         uvicorn.run(create_app(), host='127.0.0.1', port=8501, access_log=False)
