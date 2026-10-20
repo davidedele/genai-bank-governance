@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Gave the demo page a link preview (title, description and image), so a shared link shows a card instead of a bare address.
 - Rewrote the README for readers who skim: the idea in one minute, the reasoning behind the design, the link from the thesis to the software, a full section on the Claude Code plugin, a section on the AI suggestions and a facts table.
 
 ## 0.3.0 - 2026-10-20

@@ -158,3 +158,17 @@ def test_demo_page_carries_a_policy_that_allows_only_its_own_site(tmp_path):
         assert 'src=' in tag, 'inline scripts are not allowed by the policy'
     assert (tmp_path / 'site' / 'static' / 'demo-config.js').read_text().startswith('window.DEMO_CONFIG=')
     assert 'style=' not in page
+
+
+def test_demo_page_has_a_link_preview_that_points_at_its_own_image(tmp_path):
+    builder = load_builder()
+    runtime = tmp_path / 'runtime'
+    make_release(runtime, {'fastapi': [], 'pydantic': [], 'sqlite3': []})
+    builder.build(tmp_path / 'site', pyodide_dir=runtime, site_url='https://example.test/demo/')
+    page = (tmp_path / 'site' / 'index.html').read_text()
+    assert '<meta property="og:image" content="https://example.test/demo/social-preview.png">' in page
+    assert '<meta property="og:title" content="GenAI Governance">' in page
+    assert 'name="twitter:card" content="summary_large_image"' in page
+    header = (tmp_path / 'site' / 'social-preview.png').read_bytes()[:24]
+    assert header[:8] == b'\x89PNG\r\n\x1a\n'
+    assert (int.from_bytes(header[16:20], 'big'), int.from_bytes(header[20:24], 'big')) == (1200, 630)

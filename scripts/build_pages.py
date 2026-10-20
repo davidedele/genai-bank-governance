@@ -20,6 +20,9 @@ PYTHON_FILES = ['app.py', 'auto_log.py', 'classifier.py', 'mapper.py', 'provider
 # The hosting service sets no security headers, so the page carries its own policy. Everything must come from the
 # same site. 'wasm-unsafe-eval' lets the browser run the Python runtime and nothing else.
 PAGE_POLICY = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'"
+# What link previews (LinkedIn, Slack, search results) show when the demo address is shared.
+SITE_URL = 'https://davidedele.github.io/genai-bank-governance/'
+SITE_DESCRIPTION = 'Describe what an employee did with an AI tool and see which risks and controls apply. Runs in your browser, with no account.'
 BANNER_OLD = '<strong>Public demo.</strong> Use made-up information only. Saved cases are visible to every visitor and are cleared regularly.'
 BANNER_NEW = '<strong>Public demo.</strong> It runs entirely in your browser, so nothing you enter is sent anywhere. Saved cases are lost when you close or reload the page.'
 
@@ -47,7 +50,7 @@ def start_up_data() -> str:
     return done.stdout.strip()
 
 
-def build(out: Path, pyodide_url: str = PYODIDE, pyodide_dir: Path = None) -> None:
+def build(out: Path, pyodide_url: str = PYODIDE, pyodide_dir: Path = None, site_url: str = SITE_URL) -> None:
     if out.exists():
         shutil.rmtree(out)
     (out / 'py').mkdir(parents=True)
@@ -74,6 +77,15 @@ def build(out: Path, pyodide_url: str = PYODIDE, pyodide_dir: Path = None) -> No
     page = page.replace('<main id="main"', '<div id="demo-loading" class="demo-loading" role="status">Loading the demo.</div><main id="main"', 1)
     page = page.replace('<script src="static/app.js" defer></script>', '<script src="static/demo-config.js"></script><script src="static/runtime.js"></script><script src="static/app.js" defer></script>', 1)
     assert 'runtime.js' in page and 'demo-loading' in page
+    shutil.copy(ROOT / 'static_demo' / 'social-preview.png', out / 'social-preview.png')
+    preview = (f'<meta name="description" content="{SITE_DESCRIPTION}">'
+               '<meta property="og:type" content="website"><meta property="og:title" content="GenAI Governance">'
+               f'<meta property="og:description" content="{SITE_DESCRIPTION}"><meta property="og:url" content="{site_url}">'
+               f'<meta property="og:image" content="{site_url}social-preview.png">'
+               '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">'
+               '<meta property="og:image:alt" content="The overview page: Govern the use, not just the tool.">'
+               '<meta name="twitter:card" content="summary_large_image">')
+    page = page.replace('</head>', preview + '</head>', 1)
     page = page.replace('</head>', f'<meta http-equiv="Content-Security-Policy" content="{PAGE_POLICY}"><link rel="icon" href="data:,"></head>', 1)
     (out / 'index.html').write_text(page)
     (out / '.nojekyll').write_text('')
