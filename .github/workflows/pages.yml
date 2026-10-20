@@ -23,7 +23,7 @@ jobs:
       - run: python scripts/fetch_pyodide.py _pyodide
       - run: python scripts/build_pages.py _site --pyodide-dir _pyodide
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
   deploy:
