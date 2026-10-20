@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Rewrote the README for readers who skim: the idea in one minute, the reasoning behind the design, the link from the thesis to the software, a full section on the Claude Code plugin, a facts table and a summary of the engineering checks.
+- Rewrote the README for readers who skim: the idea in one minute, the reasoning behind the design, the link from the thesis to the software, a full section on the Claude Code plugin, a section on the AI suggestions and a facts table.
 
 ## 0.3.0 - 2026-10-20
 

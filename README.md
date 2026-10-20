@@ -10,7 +10,7 @@ This is a working answer to that question, built from my bachelor's thesis at Bo
 
 **[Open the live demo](https://davidedele.github.io/genai-bank-governance/)**. It runs in your browser, needs no account and sends nothing anywhere.
 
-[Idea](#the-idea-in-one-minute) · [Claude Code plugin](#the-claude-code-plugin) · [Run it](#run-it) · [What is verified](#what-i-tested-and-what-i-did-not) · [Engineering](#engineering-you-can-check)
+[Idea](#the-idea-in-one-minute) · [Claude Code plugin](#the-claude-code-plugin) · [AI suggestions](#ai-suggestions-the-model-proposes-the-rules-decide) · [Run it](#run-it) · [What is verified](#what-i-tested-and-what-i-did-not)
 
 ![A short recording of the live demo: a client file summary needs review, the same summary of public information needs only standard controls, then the review is saved to the register](docs/images/demo.gif)
 
@@ -30,7 +30,7 @@ It is a research prototype with made-up examples. It is not a compliance product
 
 ![The overview, with a pair of look-alike examples that get different outcomes](docs/images/overview-desktop.png)
 
-**The proof, in three cases.** These are made-up examples from the app. The first two differ in a single answer.
+**Three examples.** These are made-up cases from the app. The first two differ in a single answer.
 
 | Made-up example | What drives the outcome | Outcome |
 |---|---|---|
@@ -100,7 +100,7 @@ flowchart LR
 
 ![The same prompts in the Register, each with a suggested outcome from the rules](docs/images/captured-prompts.png)
 
-What makes it more than a logging hook:
+How it works:
 
 1. **No API key and no other company.** The suggestions come from the Claude Code login you already use, so there is nothing to configure beyond one setting.
 2. **It cannot be steered by what it reads.** A captured prompt is untrusted text. The background run gets no tools and no MCP servers, is told to treat the text as data, and is held to a schema that only allows the framework's own answers. The app then checks every answer again and marks anything invalid as failed.
@@ -159,14 +159,26 @@ Each saved review keeps the policy version and the reasons behind its result, so
 
 ![The register of saved reviews](docs/images/register-desktop.png)
 
-## Optional: AI suggestions
+## AI suggestions: the model proposes, the rules decide
 
-If you would like a model to suggest the answers from your description, you can switch that on with your own API key. It supports OpenAI, Anthropic, Gemini and xAI, there is no default model, nothing is sent until you tick a confirmation box, and the daily number of suggestions is capped. A suggestion can be wrong even when it is well formed, so check every answer before saving.
+Writing down what someone did is the slow part, so the app can make the first draft. Switch the feature on, paste a description of a use, and a language model fills in the answers to the questions for you. You read them, correct any that are wrong, and only then do the rules give the outcome.
+
+> [!IMPORTANT]
+> The model never sets the outcome. It only suggests answers. The app checks every one against the framework and rejects anything that does not fit, and the rules in [`data/policy.json`](data/policy.json) decide.
+
+How it stays under control:
+
+1. **Your provider, your key.** It works with OpenAI, Anthropic, Gemini and xAI. There is no default model, because names change often and depend on your account.
+2. **Nothing leaves without a click.** Nothing is sent until you tick a confirmation box and press the button, and the description text is not stored unless you choose to keep it.
+3. **Measured, not assumed.** A benchmark of 64 made-up descriptions in 24 scenarios lets you compare any model against the expected answers. I have not published a result yet, so I claim no accuracy. A suggestion can be wrong even when it is well formed, which is why a person checks every answer before saving.
+4. **Capped.** The app allows 30 suggestions a day by default, to avoid running up charges by accident.
+
+If you use Claude Code, the [plugin above](#the-claude-code-plugin) does the same job without an API key.
 
 <details>
 <summary>How to set it up</summary>
 
-If you would like a model to suggest the answers from your description, install the extra dependencies:
+Install the extra dependencies:
 
 ```bash
 python -m pip install -r requirements-llm.txt
@@ -185,8 +197,6 @@ OPENAI_API_KEY=your-key
 
 With this on, the header shows "AI suggestions on" and the assessment page names the provider and model. Nothing is sent until you tick the confirmation box and press the button. Please do not send real client information.
 
-A suggestion can be wrong even when it is well formed, so check every answer before saving.
-
 ### Daily limit
 
 To guard against running up charges by accident, the app allows 30 AI suggestions per day (UTC). I picked 30 as a round number that is plenty for trying it out. It is not a cost cap and it does not limit manual assessments. Change it in `.env`:
@@ -204,6 +214,8 @@ Use `0` for no limit. One suggestion can involve up to three requests to the pro
 There are more than 200 automated tests covering the rules, the API, the saved revisions, the exports, the optional capture and the demo build. One of them walks through all 1,440 valid combinations of answers to check that the rules behave consistently. That is a check on the rules, not an evaluation of any model.
 
 There is also a set of 64 made-up descriptions covering 24 scenarios, for comparing model suggestions with the expected answers. I wrote the labels myself and no bank professional has reviewed them, so I do not claim any accuracy for a live model or any effect in a real bank.
+
+I also tried to break my own server with forged hosts and origins, wrong tokens, oversized and chunked requests, malformed headers and spreadsheet formulas in the export. That found three inputs that made it crash, which I fixed and covered with tests. An accessibility scan finds no violations in light or dark mode, and the online demo makes no requests to any other site.
 
 <details>
 <summary>Run the checks yourself</summary>
@@ -228,9 +240,7 @@ More in the [verification record](docs/VERIFICATION.md), the [dataset card](docs
 
 ## What I would do next
 
-1. Ask people who work in bank risk and compliance to review the rules, the risk and control links and the 64 benchmark descriptions, using the [practitioner review worksheet](docs/PRACTITIONER_REVIEW.md).
-2. Run the live model evaluation and publish the result, whatever it shows.
-3. Try the framework on anonymized real processes, which is the test that matters most and the one this prototype has not had.
+So far the only person who has judged the rules is me. The step I want most is for people who work in bank risk and compliance to go through the rules, the risk and control links and the 64 benchmark descriptions. There is a [worksheet](docs/PRACTITIONER_REVIEW.md) for that. After that I would run the live model evaluation and publish the result, whatever it shows, and then try the framework on anonymized real processes, which is the test that matters most and the one this prototype has not had.
 
 If you work in this area and would give feedback, please open an issue on this repository.
 
@@ -239,17 +249,6 @@ If you work in this area and would give feedback, please open an issue on this r
 Run it on your own computer, with made-up or properly authorized data. The online demo is meant for made-up information only. Records go into a local SQLite file. The description text and model excerpts are not stored unless you choose to keep them, but names, owners, reviewers and notes always are, so keep sensitive details out of those too.
 
 There is no login, no encryption of the saved file and no tamper-proof history, and nothing here replaces a real approval process. The optional Claude Code plugin is off by default and is described above. If you installed an earlier version of it, disable that one first. See the [privacy notes](docs/PRIVACY.md).
-
-## Engineering you can check
-
-| What | How |
-|---|---|
-| Rules you can trust | More than 200 automated tests, including one that walks through all 1,440 valid combinations of answers to check that the rules behave consistently. |
-| Checked on two Pythons | The test suite runs on Python 3.10 and 3.12 in continuous integration, and the demo site is built there on every push. |
-| Hostile input | The server refuses forged hosts and origins, wrong tokens, oversized and chunked bodies, malformed headers and odd paths. Hostile inputs in the test suite never produce a server error. Spreadsheet formulas are neutralized in the CSV export. |
-| No surprises in the browser | The interface writes text into the page and never raw HTML. An automated accessibility scan reports no violations in light and dark mode. |
-| A demo with no outside calls | The in-browser demo is built from a checksum-verified copy of the Python runtime, served from the same site, under a content security policy. |
-| Honest about limits | What is measured and what is not is written down on the Test results page, in the [verification record](docs/VERIFICATION.md) and in the [dataset card](docs/DATASET_CARD.md). |
 
 ## How it is built
 
